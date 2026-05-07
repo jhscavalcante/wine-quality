@@ -16,41 +16,37 @@ stages:
       size: 415030
     - path: src/preprocessing.py
       hash: md5
-      md5: 47462a541215bf7cb4c71c413187365e
-      size: 2091
+      md5: dacade430ef7f2be7fbb4b1098618be6
+      size: 1927
     outs:
     - path: data/processed/wine_processed.parquet
       hash: md5
-      md5: a71c65eefee5169cd481918ea39d65c0
-      size: 97219
+      md5: 223f3cc07c25d8d8bac2fec3b061c2f7
+      size: 99989
   prepare:
     cmd: python3 src/prepare_data.py
     deps:
     - path: data/processed/wine_processed.parquet
       hash: md5
-      md5: a71c65eefee5169cd481918ea39d65c0
-      size: 97219
+      md5: 223f3cc07c25d8d8bac2fec3b061c2f7
+      size: 99989
     - path: src/prepare_data.py
       hash: md5
-      md5: 1a9edb79f5dee7a92e156f38014b391b
-      size: 4259
+      md5: 4a33fdb152c4b3359d36fc4df278db20
+      size: 2431
     outs:
     - path: data/processed/splits/test.parquet
       hash: md5
-      md5: dfefd6a15061cf5a79585bfc106e9491
-      size: 35708
+      md5: c2c7dcc8f21f96cf2898f501c2d7af37
+      size: 33264
     - path: data/processed/splits/train.parquet
       hash: md5
-      md5: b9de0c7360c08777d807854f8de5731a
-      size: 69649
+      md5: 37caa2088f3ba8266837e3ebb36fe5a5
+      size: 67607
     - path: data/processed/splits/val.parquet
       hash: md5
-      md5: 3745b09e44632b36befc2ea9eb0706b7
-      size: 35581
-    - path: models/preprocessors/preprocessor.joblib
-      hash: md5
-      md5: 638e6eab6578b0b8bbe05a956c70fb7d
-      size: 2286
+      md5: e12ac4a82127638cc0562585c332ff3b
+      size: 33188
   train:
     cmd: python3 src/train.py
     deps:

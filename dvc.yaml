@@ -21,7 +21,6 @@ stages:
       - data/processed/splits/train.parquet
       - data/processed/splits/val.parquet
       - data/processed/splits/test.parquet
-      - models/preprocessors/preprocessor.joblib
 
   train:
     cmd: python3 src/train.py
@@ -30,18 +29,9 @@ stages:
       - data/processed/splits/train.parquet
       - data/processed/splits/val.parquet
     outs:
-      - models/trained/SMOTE_logistic_regression.joblib
-      - models/trained/SMOTE_random_forest.joblib
-      - models/trained/SMOTE_knn.joblib
-      - models/trained/SMOTE_svm.joblib
-      - models/trained/SMOTE_xgboost.joblib
-      - models/trained/SMOTE_mlp.joblib
-      - models/trained/Tomek_logistic_regression.joblib
-      - models/trained/Tomek_random_forest.joblib
-      - models/trained/Tomek_knn.joblib
-      - models/trained/Tomek_svm.joblib
-      - models/trained/Tomek_xgboost.joblib
-      - models/trained/Tomek_mlp.joblib
+      - models/trained/xgboost_regressor.joblib
+      - models/trained/random_forest_regressor.joblib
+      - models/trained/hist_gradient_boosting_regressor.joblib
       - models/best_model.pkl
       - reports/training_report.json
 
@@ -50,18 +40,10 @@ stages:
     deps:
       - src/evaluate.py
       - data/processed/splits/test.parquet
-      - models/trained/SMOTE_logistic_regression.joblib
-      - models/trained/SMOTE_random_forest.joblib
-      - models/trained/SMOTE_knn.joblib
-      - models/trained/SMOTE_svm.joblib
-      - models/trained/SMOTE_xgboost.joblib
-      - models/trained/SMOTE_mlp.joblib
-      - models/trained/Tomek_logistic_regression.joblib
-      - models/trained/Tomek_random_forest.joblib
-      - models/trained/Tomek_knn.joblib
-      - models/trained/Tomek_svm.joblib
-      - models/trained/Tomek_xgboost.joblib
-      - models/trained/Tomek_mlp.joblib
+      - models/trained/xgboost_regressor.joblib
+      - models/trained/random_forest_regressor.joblib
+      - models/trained/hist_gradient_boosting_regressor.joblib
+      - models/best_model.pkl
     outs:
       - reports/evaluation_report.json
     plots:
