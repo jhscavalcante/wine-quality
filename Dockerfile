@@ -22,8 +22,10 @@ COPY supabase_logger.py ./supabase_logger.py
 COPY models/ ./models/
 COPY reports/ ./reports/
 
-# FastAPI (8000) + Streamlit (8501)
-EXPOSE 8000 8501
+# Expor apenas Streamlit para acesso externo
+EXPOSE 8501
 
-# Start FastAPI (which starts Streamlit in app lifespan)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start Streamlit UI directly (no FastAPI started by default)
+# Note: the API will not be running inside this container when using this CMD.
+# If you need the API too, run it separately or revert to starting `main:app`.
+CMD ["python", "-m", "streamlit", "run", "streamlit_ui.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
