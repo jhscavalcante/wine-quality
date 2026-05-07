@@ -119,3 +119,19 @@ stages:
       hash: md5
       md5: 3f6f4bf31caf4e8c55d6987a3280808f
       size: 691
+  prepare_supabase_predictions_table:
+    cmd: python3 src/prepare_supabase_predictions_table.py
+    deps:
+    - path: src/prepare_supabase_predictions_table.py
+      hash: md5
+      md5: b665161ac096ac646be65cdc260a6f13
+      size: 1360
+    - path: supabase_logger.py
+      hash: md5
+      md5: 2850e137aeb33bba18a5e6fd2f71746b
+      size: 6961
+    outs:
+    - path: reports/supabase_predictions_table_ready.txt
+      hash: md5
+      md5: 9420ce4b2d7449ede3d5d1b468d1d97b
+      size: 159

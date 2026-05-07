@@ -20,6 +20,7 @@ COPY supabase_logger.py ./supabase_logger.py
 
 # Copy trained models
 COPY models/ ./models/
+COPY reports/ ./reports/
 
 # FastAPI (8000) + Streamlit (8501)
 EXPOSE 8000 8501

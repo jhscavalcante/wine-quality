@@ -16,7 +16,10 @@ from dotenv import load_dotenv
 import supabase_logger
 
 ROOT = Path(__file__).resolve().parent
-load_dotenv(ROOT.parent / ".env")
+
+for env_path in [ROOT / ".env", Path.cwd() / ".env"]:
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
 
 MODEL_FALLBACK = ROOT / "models" / "best_model.pkl"
 API_URL = os.getenv("API_URL", "http://localhost:8000")
@@ -65,7 +68,18 @@ def load_evaluation_report() -> dict:
 
 @st.cache_data(show_spinner="Carregando relatório de treinamento…")
 def load_training_report() -> dict:
-    """Carrega relatório de treinamento (val metrics) do MLflow remoto (DagsHub)."""
+    """Carrega relatório de treinamento (val metrics), priorizando arquivo local."""
+    local_report = {}
+    if TRAINING_REPORT_PATH.exists():
+        try:
+            with open(TRAINING_REPORT_PATH) as f:
+                local_report = json.load(f)
+        except Exception:
+            local_report = {}
+
+    if local_report:
+        return local_report
+
     try:
         import mlflow
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
@@ -98,17 +112,10 @@ def load_training_report() -> dict:
             if val_metrics:
                 report[model_name] = val_metrics
         
-        return report if report else (
-            json.load(open(TRAINING_REPORT_PATH)) 
-            if TRAINING_REPORT_PATH.exists() 
-            else {}
-        )
+        return report if report else local_report
     except Exception as e:
         # Fallback silencioso para arquivo local
-        if TRAINING_REPORT_PATH.exists():
-            with open(TRAINING_REPORT_PATH) as f:
-                return json.load(f)
-        return {}
+        return local_report
 
 
 FEATURE_ORDER_RAW = [
@@ -382,17 +389,24 @@ with tab_predict:
             # Salvar no Supabase
             try:
                 proba_dict = {
-                    CLASS_LABELS.get(classes[i], str(classes[i])): proba[i]
+                    CLASS_LABELS.get(classes[i], str(classes[i])).replace("🔴 ", "").replace("🟢 ", ""): proba[i]
                     for i in range(len(proba))
                 }
-                supabase_logger.log_prediction(
+                saved = supabase_logger.log_prediction(
                     features=payload,
                     predicted_quality=quality,
                     quality_label=label.replace("🔴 ", "").replace("🟢 ", ""),
                     probabilities=proba_dict,
                     elapsed_ms=0
                 )
-                st.success("✅ Predição salva no Supabase!")
+                if saved:
+                    st.success("✅ Predição salva no Supabase!")
+                else:
+                    reason = supabase_logger.get_last_error()
+                    msg = "⚠️ Supabase não salvou. Verifique tabela/permissões/envs."
+                    if reason:
+                        msg = f"{msg}\n\nDetalhe: {reason}"
+                    st.warning(msg)
             except Exception as e:
                 st.warning(f"⚠️ Não foi possível salvar no Supabase: {e}")
                 
@@ -401,13 +415,18 @@ with tab_predict:
 
 # ── Tab: Histórico ────────────────────────────────────────────────────────
 with tab_history:
-    if st.session_state.get("history"):
+    # 1) Supabase (fonte principal de histórico compartilhado)
+    supabase_rows = supabase_logger.fetch_predictions(limit=20)
+    if supabase_rows:
+        st.dataframe(pd.DataFrame(supabase_rows), use_container_width=True)
+    # 2) Sessão local
+    elif st.session_state.get("history"):
         st.dataframe(
             pd.DataFrame(st.session_state.history).tail(20),
             use_container_width=True,
         )
     else:
-        # Tentar buscar histórico da API
+        # 3) Fallback: histórico local da API
         try:
             resp = requests.get(f"{API_URL}/simulations?limit=20", timeout=5)
             resp.raise_for_status()
@@ -415,6 +434,6 @@ with tab_history:
             if rows:
                 st.dataframe(pd.DataFrame(rows), use_container_width=True)
             else:
-                st.info("Nenhuma simulação registrada ainda.")
+                st.info("Nenhuma simulação registrada ainda (Supabase/API).")
         except Exception:
             st.info("Faça uma predição para ver o histórico aqui.")

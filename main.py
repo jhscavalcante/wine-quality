@@ -32,7 +32,19 @@ except Exception:
     from models import Base, SimulationLog  # type: ignore
     import supabase_logger  # type: ignore
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+def _load_env_files() -> None:
+    """Carrega .env de caminhos comuns (local/dev e container)."""
+    candidates = [
+        Path(__file__).resolve().parent / ".env",  # /app/.env (container) ou root local
+        Path.cwd() / ".env",
+    ]
+    for env_path in candidates:
+        if env_path.exists():
+            load_dotenv(env_path, override=False)
+
+
+_load_env_files()
 
 # ---------------------------------------------------------------------------
 # Constantes
