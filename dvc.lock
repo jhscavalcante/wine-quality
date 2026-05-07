@@ -5,31 +5,31 @@ stages:
     outs:
     - path: data/raw/wine_quality.csv
       hash: md5
-      md5: fb73f4f9ea1741d508cfd2db676fc352
-      size: 415030
+      md5: a543a802db68dbdbbdb962fae7606144
+      size: 446071
   preprocess:
     cmd: python3 src/preprocessing.py
     deps:
     - path: data/raw/wine_quality.csv
       hash: md5
-      md5: fb73f4f9ea1741d508cfd2db676fc352
-      size: 415030
+      md5: a543a802db68dbdbbdb962fae7606144
+      size: 446071
     - path: src/preprocessing.py
       hash: md5
-      md5: adb07cd7609fb419b428a2a1fc180640
-      size: 1757
+      md5: 4e6864c011f9f5b339a2b15edd925cb1
+      size: 1628
     outs:
     - path: data/processed/wine_processed.parquet
       hash: md5
-      md5: 3c593bad90865dcfc02f6b3132581b91
-      size: 99533
+      md5: 83b1e5c04fa796153ea27c3b26475c95
+      size: 99823
   prepare:
     cmd: python3 src/prepare_data.py
     deps:
     - path: data/processed/wine_processed.parquet
       hash: md5
-      md5: 3c593bad90865dcfc02f6b3132581b91
-      size: 99533
+      md5: 83b1e5c04fa796153ea27c3b26475c95
+      size: 99823
     - path: src/prepare_data.py
       hash: md5
       md5: 72ba7c992ceb170dccd720dd3fc575cf
@@ -37,27 +37,27 @@ stages:
     outs:
     - path: data/processed/splits/test.parquet
       hash: md5
-      md5: 19902c0434b32c5149f66f79d862752a
-      size: 33204
+      md5: 7139622a499c22dc6c2507854d9d33cc
+      size: 33084
     - path: data/processed/splits/train.parquet
       hash: md5
-      md5: 5c0fc59de901e66279191aa78d97664f
-      size: 67375
+      md5: 5e7818da6c95ecaead93474c3c4ef436
+      size: 67212
     - path: data/processed/splits/val.parquet
       hash: md5
-      md5: 567a713811676e1b979e5bb4272d29c9
-      size: 32894
+      md5: 2821e3ffb8c2ce784b06f73d2f644467
+      size: 32979
   train:
     cmd: python3 src/train.py
     deps:
     - path: data/processed/splits/train.parquet
       hash: md5
-      md5: 5c0fc59de901e66279191aa78d97664f
-      size: 67375
+      md5: 5e7818da6c95ecaead93474c3c4ef436
+      size: 67212
     - path: data/processed/splits/val.parquet
       hash: md5
-      md5: 567a713811676e1b979e5bb4272d29c9
-      size: 32894
+      md5: 2821e3ffb8c2ce784b06f73d2f644467
+      size: 32979
     - path: src/train.py
       hash: md5
       md5: 2e5ceefa3d770b73cdc6f7d06ca127b2
@@ -65,47 +65,47 @@ stages:
     outs:
     - path: models/best_model.pkl
       hash: md5
-      md5: 73d768ae62cc649b4577f3bef02faaba
-      size: 33305018
+      md5: 8c6c21614d3b6cced3c20a6dd62a3635
+      size: 56083354
     - path: models/trained/hist_gradient_boosting_regressor.joblib
       hash: md5
-      md5: 5d58e20cf84ffdf572680d1c9347e662
-      size: 1466921
+      md5: 413f26d5901068c9831948d844960e7f
+      size: 1395801
     - path: models/trained/random_forest_regressor.joblib
       hash: md5
-      md5: 7a74476eb5c4dbdaa653ba92f1c189f3
-      size: 33304730
+      md5: a1f91d80afb1581a861ead0d06f4f4b8
+      size: 56083082
     - path: models/trained/xgboost_regressor.joblib
       hash: md5
-      md5: f5e7004e7452b077c67f668f56d79a50
-      size: 1598996
+      md5: 6ed764aaa99230a080fac9b9cc469d7a
+      size: 1580984
     - path: reports/training_report.json
       hash: md5
-      md5: a129836163d7182c4f0a095400114b0d
-      size: 861
+      md5: 24014dfae1ef1e7ffe66acb2e4329728
+      size: 858
   evaluate:
     cmd: python3 src/evaluate.py
     deps:
     - path: data/processed/splits/test.parquet
       hash: md5
-      md5: 19902c0434b32c5149f66f79d862752a
-      size: 33204
+      md5: 7139622a499c22dc6c2507854d9d33cc
+      size: 33084
     - path: models/best_model.pkl
       hash: md5
-      md5: 73d768ae62cc649b4577f3bef02faaba
-      size: 33305018
+      md5: 8c6c21614d3b6cced3c20a6dd62a3635
+      size: 56083354
     - path: models/trained/hist_gradient_boosting_regressor.joblib
       hash: md5
-      md5: 5d58e20cf84ffdf572680d1c9347e662
-      size: 1466921
+      md5: 413f26d5901068c9831948d844960e7f
+      size: 1395801
     - path: models/trained/random_forest_regressor.joblib
       hash: md5
-      md5: 7a74476eb5c4dbdaa653ba92f1c189f3
-      size: 33304730
+      md5: a1f91d80afb1581a861ead0d06f4f4b8
+      size: 56083082
     - path: models/trained/xgboost_regressor.joblib
       hash: md5
-      md5: f5e7004e7452b077c67f668f56d79a50
-      size: 1598996
+      md5: 6ed764aaa99230a080fac9b9cc469d7a
+      size: 1580984
     - path: src/evaluate.py
       hash: md5
       md5: b044eb3f067120ff56935bdc9dff4c01
@@ -113,9 +113,9 @@ stages:
     outs:
     - path: reports/confusion_matrix_best_bundle.png
       hash: md5
-      md5: 80672d78530e15ede14034b5e222f201
-      size: 30947
+      md5: 07b8cd961c78f6e9346699e77fc2202e
+      size: 32021
     - path: reports/evaluation_report.json
       hash: md5
-      md5: 146ac649c0a49fddfa9df28b43bed34b
-      size: 692
+      md5: 3f6f4bf31caf4e8c55d6987a3280808f
+      size: 691

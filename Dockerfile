@@ -24,7 +24,5 @@ COPY models/ ./models/
 # FastAPI (8000) + Streamlit (8501)
 EXPOSE 8000 8501
 
-# Start Streamlit with FastAPI
-CMD ["streamlit", "run", "streamlit_ui.py", \
-     "--server.port=8501", \
-     "--server.address=0.0.0.0"]
+# Start FastAPI (which starts Streamlit in app lifespan)
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

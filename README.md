@@ -22,6 +22,25 @@ A estratégia oficial é **regressão da nota (`quality_raw`) + threshold binár
 - `main.py`: API `/predict`, `/health`, `/simulations`
 - `streamlit_ui.py`: interface para predição e monitoramento
 
+## Fonte de Dados (Source of Truth)
+
+O projeto usa **Supabase como fonte de verdade operacional**.
+
+Fluxo oficial:
+1. Dataset Kaggle alvo: `rajyellow46/wine-quality` arquivo `winequalityN.csv`.
+2. Executar `src/ingestion.py`, que:
+   - tenta ler a tabela no Supabase (`SUPABASE_TABLE`);
+   - se estiver vazia, baixa `winequalityN.csv` via Kaggle CLI, faz seed no Supabase e reconsulta;
+   - salva snapshot local em `data/raw/wine_quality.csv`.
+4. Executar `src/preprocessing.py`, que consome `data/raw/wine_quality.csv` com DuckDB e gera `data/processed/wine_processed.parquet`.
+
+Resumo visual:
+`Kaggle (winequalityN.csv) -> Supabase -> data/raw/wine_quality.csv -> DuckDB preprocessing -> data/processed/*`
+
+Observações:
+- Para download automático do Kaggle funcionar, configure `KAGGLE_USERNAME`/`KAGGLE_KEY` (ou `~/.kaggle/kaggle.json`) e tenha a CLI `kaggle` instalada.
+- Se o Kaggle não estiver disponível, `ingestion.py` faz fallback para `data/wine_quality.csv`.
+
 ## Como executar
 
 ### 1) Ambiente

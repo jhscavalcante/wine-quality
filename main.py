@@ -23,9 +23,14 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-import wine_project.database as database
-from wine_project.models import Base, SimulationLog
-import wine_project.supabase_logger as supabase_logger
+try:
+    import wine_project.database as database
+    from wine_project.models import Base, SimulationLog
+    import wine_project.supabase_logger as supabase_logger
+except Exception:
+    import database  # type: ignore
+    from models import Base, SimulationLog  # type: ignore
+    import supabase_logger  # type: ignore
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -34,7 +39,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # ---------------------------------------------------------------------------
 
 MODEL_PATH = os.getenv(
-    "MODEL_PATH", str(Path(__file__).resolve().parent / "best_model.pkl")
+    "MODEL_PATH", str(Path(__file__).resolve().parent / "models" / "best_model.pkl")
 )
 STREAMLIT_UI = Path(__file__).resolve().parent / "streamlit_ui.py"
 
@@ -72,13 +77,23 @@ def _load_model():
         except Exception as exc:
             print(f"[main] MLflow falhou ({exc}), usando fallback local.")
 
-    if os.path.exists(MODEL_PATH):
-        loaded = joblib.load(MODEL_PATH)
-        if isinstance(loaded, dict) and "pipeline" in loaded:
-            return loaded
-        return {"pipeline": loaded, "binary_threshold": DEFAULT_BINARY_THRESHOLD}
+    candidate_paths = [
+        Path(MODEL_PATH),
+        Path(__file__).resolve().parent / "models" / "best_model.pkl",
+        Path(__file__).resolve().parent / "best_model.pkl",
+    ]
 
-    raise RuntimeError(f"Modelo não encontrado em {MODEL_PATH} nem no MLflow Registry.")
+    for model_path in candidate_paths:
+        if model_path.exists():
+            loaded = joblib.load(model_path)
+            if isinstance(loaded, dict) and "pipeline" in loaded:
+                return loaded
+            return {"pipeline": loaded, "binary_threshold": DEFAULT_BINARY_THRESHOLD}
+
+    searched = ", ".join(str(p) for p in candidate_paths)
+    raise RuntimeError(
+        f"Modelo não encontrado ({searched}) nem no MLflow Registry."
+    )
 
 
 # ---------------------------------------------------------------------------

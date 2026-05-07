@@ -1,5 +1,7 @@
 """
-Conexão com PostgreSQL + health-check de startup.
+Conexão com banco de dados + health-check de startup.
+
+Suporta PostgreSQL (produção) e SQLite (fallback local em Docker single-container).
 """
 
 import os
@@ -13,20 +15,39 @@ logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://wine_user:wine_pass@db:5432/wine_db",
+    "sqlite:///./wine.db",
 )
 
 engine = SessionLocal = None  # type: ignore  # inicializados em connect()
 
+
+def _is_sqlite_url(url: str) -> bool:
+    return url.startswith("sqlite")
+
 def _build_engine():
     global engine, SessionLocal
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    if _is_sqlite_url(DATABASE_URL):
+        engine = create_engine(
+            DATABASE_URL,
+            pool_pre_ping=True,
+            connect_args={"check_same_thread": False},
+        )
+    else:
+        engine = create_engine(DATABASE_URL, pool_pre_ping=True)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def wait_for_db(retries: int = 15, delay: float = 2.0) -> None:
     """Bloqueia até o PostgreSQL aceitar conexões."""
     _build_engine()
+
+    # SQLite local não precisa de retries/rede
+    if _is_sqlite_url(DATABASE_URL):
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        logger.info("✅  Banco SQLite disponível.")
+        return
+
     for attempt in range(1, retries + 1):
         try:
             with engine.connect() as conn:

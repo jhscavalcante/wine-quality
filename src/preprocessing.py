@@ -6,7 +6,7 @@ import duckdb
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RAW_PATH = ROOT / "data" / "wine_quality.csv"
+RAW_PATH = ROOT / "data" / "raw" / "wine_quality.csv"
 PROCESSED_PATH = ROOT / "data" / "processed" / "wine_processed.parquet"
 
 
@@ -28,15 +28,15 @@ def preprocess(raw_path: Path = RAW_PATH, processed_path: Path = PROCESSED_PATH)
         COPY (
             WITH engineered AS (
                 SELECT
-                    "fixed acidity" AS fixed_acidity,
-                    "volatile acidity" AS volatile_acidity,
-                    "citric acid" AS citric_acid,
-                    "residual sugar" AS residual_sugar,
+                    fixed_acidity,
+                    volatile_acidity,
+                    citric_acid,
+                    residual_sugar,
                     chlorides,
-                    "free sulfur dioxide" AS free_sulfur_dioxide,
-                    "total sulfur dioxide" AS total_sulfur_dioxide,
+                    free_sulfur_dioxide,
+                    total_sulfur_dioxide,
                     density,
-                    "pH" AS ph,
+                    ph,
                     sulphates,
                     alcohol,
                     type,
