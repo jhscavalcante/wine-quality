@@ -16,6 +16,7 @@ class SimulationLog(Base):
     id                = Column(Integer, primary_key=True, index=True)
     created_at        = Column(DateTime, default=datetime.utcnow, nullable=False)
     predicted_quality = Column(Integer, nullable=False)
+    predicted_score   = Column(Float, nullable=True)
     elapsed_ms        = Column(Float, nullable=False)
     input_data        = Column(JSONB, nullable=False)   # features do vinho
     probabilities     = Column(JSONB, nullable=False)   # distribuição de probabilidades

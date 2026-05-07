@@ -6,13 +6,11 @@ import duckdb
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RAW_PATH = ROOT / "data" / "wine_quality.csv"  # ← CSV que contém 'type' (red/white)
+RAW_PATH = ROOT / "data" / "wine_quality.csv"
 PROCESSED_PATH = ROOT / "data" / "processed" / "wine_processed.parquet"
 
 
-def preprocess(
-    raw_path: Path = RAW_PATH, processed_path: Path = PROCESSED_PATH
-) -> None:
+def preprocess(raw_path: Path = RAW_PATH, processed_path: Path = PROCESSED_PATH) -> None:
     processed_path.parent.mkdir(parents=True, exist_ok=True)
 
     con = duckdb.connect()
@@ -41,14 +39,9 @@ def preprocess(
                     "pH" AS ph,
                     sulphates,
                     alcohol,
-                    type,  -- Coluna categórica (red/white)
-                    
-                    -- Fusão de classes: 0=Ruim (<=5), 1=Médio (6), 2=Bom (>=7)
-                    CASE
-                        WHEN quality <= 5 THEN 0
-                        WHEN quality = 6  THEN 1
-                        ELSE 2
-                    END AS quality
+                    type,
+                    CAST(quality AS INTEGER) AS quality_raw,
+                    CASE WHEN quality >= 7 THEN 1 ELSE 0 END AS quality_binary
                 FROM raw
             )
             SELECT * FROM engineered
@@ -58,11 +51,9 @@ def preprocess(
         [str(processed_path)],
     )
     con.close()
+
     print(f"[preprocessing] Dataset processado salvo em: {processed_path}")
-    print(
-        "[preprocessing] Classes: 0=Ruim (quality<=5)  1=Médio (quality=6)  2=Bom (quality>=7)"
-    )
-    print("[preprocessing] Features: 11 originais + 1 categórica (type: red/white)")
+    print("[preprocessing] Targets: quality_raw (3..9) e quality_binary (1=good>=7, 0=not_good<7)")
 
 
 if __name__ == "__main__":

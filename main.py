@@ -38,8 +38,9 @@ MODEL_PATH = os.getenv(
 )
 STREAMLIT_UI = Path(__file__).resolve().parent / "streamlit_ui.py"
 
-# Classes: 0=Ruim (quality<=5), 1=Médio (quality=6), 2=Bom (quality>=7)
-CLASS_LABELS = {0: "Ruim", 1: "Médio", 2: "Bom"}
+# Classes: 0=Not Good (<7), 1=Good (>=7)
+CLASS_LABELS = {0: "Not Good", 1: "Good"}
+DEFAULT_BINARY_THRESHOLD = 6.5
 
 # ---------------------------------------------------------------------------
 # Model loading
@@ -64,14 +65,18 @@ def _load_model():
                 f"models:/{model_name}/Production",
             ]:
                 try:
-                    return mlflow.sklearn.load_model(ref)
+                    loaded = mlflow.sklearn.load_model(ref)
+                    return {"pipeline": loaded, "binary_threshold": DEFAULT_BINARY_THRESHOLD}
                 except Exception:
                     continue
         except Exception as exc:
             print(f"[main] MLflow falhou ({exc}), usando fallback local.")
 
     if os.path.exists(MODEL_PATH):
-        return joblib.load(MODEL_PATH)
+        loaded = joblib.load(MODEL_PATH)
+        if isinstance(loaded, dict) and "pipeline" in loaded:
+            return loaded
+        return {"pipeline": loaded, "binary_threshold": DEFAULT_BINARY_THRESHOLD}
 
     raise RuntimeError(f"Modelo não encontrado em {MODEL_PATH} nem no MLflow Registry.")
 
@@ -154,6 +159,7 @@ class PredictionResponse(BaseModel):
     quality: int
     quality_label: str
     probabilities: dict[str, float]
+    predicted_score: float
     elapsed_ms: float
 
 
@@ -171,7 +177,7 @@ def get_db():
 
 
 # ---------------------------------------------------------------------------
-# Feature engineering — espelha preprocessing.py (11 features brutas + type one-hot encoded)
+# Feature engineering — espelha preprocessing.py (11 features + type categórica)
 # ---------------------------------------------------------------------------
 
 FEATURE_ORDER_RAW = [
@@ -186,12 +192,13 @@ FEATURE_ORDER_RAW = [
     "ph",
     "sulphates",
     "alcohol",
-    "type_red",
-    "type_white",
+    "type",
 ]
 
 
 def _get_expected_features(model) -> list[str]:
+    if isinstance(model, dict) and "features" in model:
+        return list(model["features"])
     for obj in [
         model,
         getattr(model, "steps", [[None, None]])[0][1]
@@ -209,18 +216,27 @@ def _get_expected_features(model) -> list[str]:
 def _build_dataframe(wine: WineFeatures, model=None) -> pd.DataFrame:
     data = wine.model_dump()
     df = pd.DataFrame([data])
-    
-    # One-hot encoding para 'type' (red/white)
-    if "type" in df.columns:
-        df = pd.get_dummies(df, columns=["type"], prefix="type", drop_first=False)
-    
-    df["sulphates_log"] = np.log1p(df["sulphates"])
-    df["chlorides_log"] = np.log1p(df["chlorides"])
-    df["residual_sugar_log"] = np.log1p(df["residual_sugar"])
+
     if model is not None:
         expected = _get_expected_features(model)
         return df[expected]
     return df[FEATURE_ORDER_RAW]
+
+
+def _score_to_class(score: float, binary_threshold: float) -> int:
+    return 1 if float(score) >= float(binary_threshold) else 0
+
+
+def _score_to_probabilities(score: float) -> dict[str, float]:
+    centers = np.array([5.6, 7.2], dtype=float)
+    dist = np.abs(centers - float(score))
+    logits = -dist
+    exps = np.exp(logits - np.max(logits))
+    probs = exps / np.sum(exps)
+    return {
+        CLASS_LABELS[0]: round(float(probs[0]), 4),
+        CLASS_LABELS[1]: round(float(probs[1]), 4),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -236,20 +252,18 @@ def health_check():
 
 @app.post("/predict", response_model=PredictionResponse, tags=["prediction"])
 def predict(wine: WineFeatures, db: Session = Depends(get_db)):
-    """Prediz a qualidade do vinho (0=Ruim, 1=Médio, 2=Bom)."""
-    model = app.state.model
+    """Prediz a qualidade do vinho (0=Not Good, 1=Good)."""
+    model_bundle = app.state.model
+    model = model_bundle["pipeline"] if isinstance(model_bundle, dict) else model_bundle
+    binary_threshold = float(model_bundle.get("binary_threshold", DEFAULT_BINARY_THRESHOLD)) if isinstance(model_bundle, dict) else DEFAULT_BINARY_THRESHOLD
     t0 = time.perf_counter()
 
-    df = _build_dataframe(wine, model)
+    df = _build_dataframe(wine, model_bundle)
 
     try:
-        quality = int(model.predict(df)[0])
-        proba = model.predict_proba(df)[0]
-        classes = [str(c) for c in model.classes_]
-        probabilities = {
-            CLASS_LABELS.get(int(c), c): round(float(p), 4)
-            for c, p in zip(classes, proba)
-        }
+        predicted_score = float(model.predict(df)[0])
+        quality = _score_to_class(predicted_score, binary_threshold)
+        probabilities = _score_to_probabilities(predicted_score)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Erro na predição: {exc}")
 
@@ -259,6 +273,7 @@ def predict(wine: WineFeatures, db: Session = Depends(get_db)):
         input_data=wine.model_dump(),
         predicted_quality=quality,
         probabilities=probabilities,
+        predicted_score=predicted_score,
         elapsed_ms=elapsed_ms,
     )
     db.add(log)
@@ -277,6 +292,7 @@ def predict(wine: WineFeatures, db: Session = Depends(get_db)):
         quality=quality,
         quality_label=CLASS_LABELS.get(quality, str(quality)),
         probabilities=probabilities,
+        predicted_score=predicted_score,
         elapsed_ms=elapsed_ms,
     )
 
@@ -295,6 +311,7 @@ def list_simulations(limit: int = 50, db: Session = Depends(get_db)):
             "id": r.id,
             "created_at": r.created_at.isoformat(),
             "predicted_quality": r.predicted_quality,
+            "predicted_score": r.predicted_score,
             "quality_label": CLASS_LABELS.get(r.predicted_quality, ""),
             "elapsed_ms": r.elapsed_ms,
             "input_data": r.input_data,

@@ -1,4 +1,5 @@
 pandas
+duckdb
 scikit-learn
 numpy
 PyQt5

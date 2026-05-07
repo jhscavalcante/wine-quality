@@ -1,7 +1,4 @@
-"""
-Streamlit UI — Wine Quality Classifier (3 classes: Ruim / Médio / Bom)
-Iniciado como subprocesso pelo FastAPI lifespan em main.py.
-"""
+"""Streamlit UI — Wine Quality Classifier (binary: Not Good / Good)."""
 
 from __future__ import annotations
 
@@ -32,7 +29,7 @@ MLFLOW_TRACKING_URI = os.getenv(
     "https://dagshub.com/frpbotero/wine_project.mlflow"
 )
 
-CLASS_LABELS = {0: "🔴 Ruim", 1: "🟡 Médio", 2: "🟢 Bom"}
+CLASS_LABELS = {0: "🔴 Not Good", 1: "🟢 Good"}
 
 WINE_TYPES = {"🍷 Tinto": "red", "🥂 Branco": "white"}
 
@@ -126,13 +123,14 @@ FEATURE_ORDER_RAW = [
     "ph",
     "sulphates",
     "alcohol",
-    "type_red",
-    "type_white",
+    "type",
 ]
 
 
 def _get_expected_features(model) -> list[str]:
     """Detecta as features esperadas pelo modelo (pipeline ou estimador direto)."""
+    if isinstance(model, dict) and "features" in model:
+        return list(model["features"])
     for obj in [
         model,
         getattr(model, "steps", [[None, None]])[0][1]
@@ -149,23 +147,14 @@ def _get_expected_features(model) -> list[str]:
 
 
 def _prepare_features(payload: dict, model=None) -> pd.DataFrame:
-    """Prepara features para o modelo com transformações (11 features químicas + type one-hot encoded + log transforms)."""
+    """Prepara features para o modelo (11 features químicas + type categórica)."""
     df = pd.DataFrame([payload])
-    
-    # One-hot encoding para 'type' (red/white)
-    if "type" in df.columns:
-        df = pd.get_dummies(df, columns=["type"], prefix="type", drop_first=False)
-    
-    # Aplicar as mesmas transformações que em main.py
-    df["sulphates_log"] = np.log1p(df["sulphates"])
-    df["chlorides_log"] = np.log1p(df["chlorides"])
-    df["residual_sugar_log"] = np.log1p(df["residual_sugar"])
-    
+
     if model is not None:
         expected = _get_expected_features(model)
         return df[expected]
-    
-    # Fallback: retorna as 11 features químicas + type one-hot encoded
+
+    # Fallback: retorna as 11 features químicas + type categórica
     return df[
         [
             "fixed_acidity",
@@ -179,21 +168,37 @@ def _prepare_features(payload: dict, model=None) -> pd.DataFrame:
             "ph",
             "sulphates",
             "alcohol",
-            "type_red",
-            "type_white",
+            "type",
         ]
     ]
 
 
-def _predict_local(payload: dict) -> tuple[int, list[float], list[int]]:
+def _score_to_probabilities(score: float) -> list[float]:
+    centers = np.array([5.6, 7.2], dtype=float)
+    dist = np.abs(centers - float(score))
+    logits = -dist
+    exps = np.exp(logits - np.max(logits))
+    probs = exps / np.sum(exps)
+    return [float(p) for p in probs]
+
+
+def _score_to_class(score: float, thresholds: dict) -> int:
+    t = float(thresholds.get("binary_threshold", thresholds.get("t2", 6.5)))
+    return 1 if float(score) >= t else 0
+
+
+def _predict_local(payload: dict) -> tuple[int, list[float], list[int], float]:
     model, source = load_model()
     if model is None:
         raise RuntimeError(f"Modelo não disponível: {source}")
+    pipeline = model["pipeline"] if isinstance(model, dict) and "pipeline" in model else model
+    thresholds = {"binary_threshold": model.get("binary_threshold", 6.5)} if isinstance(model, dict) else {"binary_threshold": 6.5}
     features = _prepare_features(payload, model)
-    quality = int(model.predict(features)[0])
-    proba = list(map(float, model.predict_proba(features)[0]))
-    classes = [int(c) for c in model.classes_]
-    return quality, proba, classes
+    predicted_score = float(pipeline.predict(features)[0])
+    quality = _score_to_class(predicted_score, thresholds)
+    proba = _score_to_probabilities(predicted_score)
+    classes = [0, 1]
+    return quality, proba, classes, predicted_score
 
 
 RAW_FEATURES = [
@@ -212,12 +217,13 @@ RAW_FEATURES = [
 ]
 
 
-def _predict_api(payload: dict) -> tuple[int, list[float], list[int]]:
+def _predict_api(payload: dict) -> tuple[int, list[float], list[int], float]:
     api_payload = {k: payload[k] for k in RAW_FEATURES}
     resp = requests.post(f"{API_URL}/predict", json=api_payload, timeout=10)
     resp.raise_for_status()
     data = resp.json()
     quality = data["quality"]
+    predicted_score = float(data.get("predicted_score", float(quality)))
     probs_dict: dict = data["probabilities"]
     # API labels (no emoji) → int class index via CLASS_LABELS_API
     # CLASS_LABELS values may have emojis; strip to match API output
@@ -231,7 +237,7 @@ def _predict_api(payload: dict) -> tuple[int, list[float], list[int]]:
         # Fallback: use positional order returned by the API
         classes = list(range(len(probs_dict)))
     proba = [list(probs_dict.values())[i] for i in range(len(classes))]
-    return quality, proba, classes
+    return quality, proba, classes, predicted_score
 
 
 # ── UI ───────────────────────────────────────────────────────────────────────
@@ -258,8 +264,9 @@ with st.sidebar:
         best_model_name = None
         best_f1 = 0
         for name, metrics in training_report.items():
-            if metrics.get("val_f1", 0) > best_f1:
-                best_f1 = metrics.get("val_f1", 0)
+            candidate = metrics.get("val_binary_f1_weighted_tuned", metrics.get("val_binary_f1_weighted", 0))
+            if candidate > best_f1:
+                best_f1 = candidate
                 best_model_name = name
         
         if best_model_name:
@@ -278,11 +285,11 @@ with st.sidebar:
             train_metrics = training_report[best_model_name]
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("✅ Acurácia", f"{train_metrics.get('val_accuracy', 0):.4f}")
-                st.metric("📈 Recall", f"{train_metrics.get('val_recall', 0):.4f}")
+                st.metric("✅ Acurácia", f"{train_metrics.get('val_binary_accuracy', 0):.4f}")
+                st.metric("📉 RMSE", f"{train_metrics.get('val_rmse', 0):.4f}")
             with col2:
-                st.metric("🎯 F1-Score", f"{train_metrics.get('val_f1', 0):.4f}")
-                st.metric("🔍 Precisão", f"{train_metrics.get('val_precision', 0):.4f}")
+                st.metric("🎯 F1-Score", f"{train_metrics.get('val_binary_f1_weighted_tuned', train_metrics.get('val_binary_f1_weighted', 0)):.4f}")
+                st.metric("📏 MAE", f"{train_metrics.get('val_mae', 0):.4f}")
             
             if best_model_name in evaluation_report:
                 st.markdown("---")
@@ -290,11 +297,11 @@ with st.sidebar:
                 test_metrics = evaluation_report[best_model_name]
                 col3, col4 = st.columns(2)
                 with col3:
-                    st.metric("✅ Acurácia", f"{test_metrics.get('test_accuracy', 0):.4f}")
-                    st.metric("📈 Recall", f"{test_metrics.get('test_recall', 0):.4f}")
+                    st.metric("✅ Acurácia", f"{test_metrics.get('test_binary_accuracy', 0):.4f}")
+                    st.metric("📉 RMSE", f"{test_metrics.get('test_rmse', 0):.4f}")
                 with col4:
-                    st.metric("🎯 F1-Score", f"{test_metrics.get('test_f1', 0):.4f}")
-                    st.metric("🔍 Precisão", f"{test_metrics.get('test_precision', 0):.4f}")
+                    st.metric("🎯 F1-Score", f"{test_metrics.get('test_binary_f1_weighted', 0):.4f}")
+                    st.metric("📏 MAE", f"{test_metrics.get('test_mae', 0):.4f}")
     else:
         st.info("📊 Execute `python src/train.py` para gerar relatório.")
 
@@ -338,10 +345,11 @@ with tab_predict:
             "ph": ph,
             "sulphates": sulphates,
             "alcohol": alcohol,
+            "type": wine_type,
         }
 
         try:
-            quality, proba, classes = _predict_local(payload)
+            quality, proba, classes, predicted_score = _predict_local(payload)
 
             label = CLASS_LABELS.get(quality, str(quality))
             q_idx = classes.index(quality) if quality in classes else 0
@@ -349,6 +357,7 @@ with tab_predict:
 
             st.subheader(f"Qualidade prevista: {label}")
             st.metric("Confiança da predição", f"{confidence:.1%}")
+            st.metric("Nota contínua prevista", f"{predicted_score:.3f}")
 
             prob_df = pd.DataFrame(
                 {"Probabilidade": proba},
@@ -361,6 +370,7 @@ with tab_predict:
                     "tipo": wine_type_label,
                     "qualidade": label,
                     "confiança": f"{confidence:.1%}",
+                    "score_continuo": round(predicted_score, 4),
                     **{
                         CLASS_LABELS.get(classes[i], str(classes[i])): f"{proba[i]:.1%}"
                         for i in range(len(proba))
@@ -378,7 +388,7 @@ with tab_predict:
                 supabase_logger.log_prediction(
                     features=payload,
                     predicted_quality=quality,
-                    quality_label=label.replace("🔴 ", "").replace("🟡 ", "").replace("🟢 ", ""),
+                    quality_label=label.replace("🔴 ", "").replace("🟢 ", ""),
                     probabilities=proba_dict,
                     elapsed_ms=0
                 )

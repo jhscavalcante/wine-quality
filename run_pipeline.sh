@@ -16,7 +16,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo -e "${BLUE}"
 cat << "EOF"
 ╔═══════════════════════════════════════════════════════════════════════════╗
-║          🍷 Wine Quality Classifier - ML Pipeline                        ║
+║       🍷 Wine Quality Binary Classifier - ML Pipeline                    ║
 ║                    Reproduzível com DVC + MLflow                         ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 EOF
@@ -67,9 +67,9 @@ cd "$ROOT"
 stages=(
     "ingest:Ingestion (fetch dados)"
     "preprocess:Preprocessing (feature engineering)"
-    "prepare:Prepare (split + preprocessor)"
-    "train:Training (12 modelos)"
-    "evaluate:Evaluation (test metrics + plots)"
+    "prepare:Prepare (split 60/20/20 binário)"
+    "train:Training (regressão + threshold binário)"
+    "evaluate:Evaluation (binary metrics + confusion matrix)"
 )
 
 for stage in "${stages[@]}"; do
@@ -96,7 +96,7 @@ echo "  3. MLflow UI:     mlflow ui"
 echo ""
 echo -e "${GREEN}📈 Resultados:${NC}"
 echo "  - Modelos treinados: models/trained/"
-echo "  - Melhor modelo: app/best_model.pkl"
+echo "  - Melhor modelo: models/best_model.pkl"
 echo "  - Relatórios: reports/"
 echo "  - Métricas: reports/{training,evaluation}_report.json"
 echo ""

@@ -16,106 +16,106 @@ stages:
       size: 415030
     - path: src/preprocessing.py
       hash: md5
-      md5: dacade430ef7f2be7fbb4b1098618be6
-      size: 1927
+      md5: adb07cd7609fb419b428a2a1fc180640
+      size: 1757
     outs:
     - path: data/processed/wine_processed.parquet
       hash: md5
-      md5: 223f3cc07c25d8d8bac2fec3b061c2f7
-      size: 99989
+      md5: 3c593bad90865dcfc02f6b3132581b91
+      size: 99533
   prepare:
     cmd: python3 src/prepare_data.py
     deps:
     - path: data/processed/wine_processed.parquet
       hash: md5
-      md5: 223f3cc07c25d8d8bac2fec3b061c2f7
-      size: 99989
+      md5: 3c593bad90865dcfc02f6b3132581b91
+      size: 99533
     - path: src/prepare_data.py
       hash: md5
-      md5: 4a33fdb152c4b3359d36fc4df278db20
-      size: 2431
+      md5: 72ba7c992ceb170dccd720dd3fc575cf
+      size: 2181
     outs:
     - path: data/processed/splits/test.parquet
       hash: md5
-      md5: c2c7dcc8f21f96cf2898f501c2d7af37
-      size: 33264
+      md5: 19902c0434b32c5149f66f79d862752a
+      size: 33204
     - path: data/processed/splits/train.parquet
       hash: md5
-      md5: 37caa2088f3ba8266837e3ebb36fe5a5
-      size: 67607
+      md5: 5c0fc59de901e66279191aa78d97664f
+      size: 67375
     - path: data/processed/splits/val.parquet
       hash: md5
-      md5: e12ac4a82127638cc0562585c332ff3b
-      size: 33188
+      md5: 567a713811676e1b979e5bb4272d29c9
+      size: 32894
   train:
     cmd: python3 src/train.py
     deps:
     - path: data/processed/splits/train.parquet
       hash: md5
-      md5: b9de0c7360c08777d807854f8de5731a
-      size: 69649
+      md5: 5c0fc59de901e66279191aa78d97664f
+      size: 67375
     - path: data/processed/splits/val.parquet
       hash: md5
-      md5: 3745b09e44632b36befc2ea9eb0706b7
-      size: 35581
+      md5: 567a713811676e1b979e5bb4272d29c9
+      size: 32894
     - path: src/train.py
       hash: md5
-      md5: 424c05de69fe37c429652653f7bc9279
-      size: 12959
+      md5: 2e5ceefa3d770b73cdc6f7d06ca127b2
+      size: 8599
     outs:
     - path: models/best_model.pkl
       hash: md5
-      md5: bef19260706f15222a07ce212cbc8e2b
-      size: 16185498
-    - path: models/trained/SMOTE_knn.joblib
+      md5: 73d768ae62cc649b4577f3bef02faaba
+      size: 33305018
+    - path: models/trained/hist_gradient_boosting_regressor.joblib
       hash: md5
-      md5: 240755938ca2056fc4a58363d70633a7
-      size: 1036424
-    - path: models/trained/SMOTE_logistic_regression.joblib
+      md5: 5d58e20cf84ffdf572680d1c9347e662
+      size: 1466921
+    - path: models/trained/random_forest_regressor.joblib
       hash: md5
-      md5: c04ae0b14fee70c230018d79558e4094
-      size: 3297
-    - path: models/trained/SMOTE_mlp.joblib
+      md5: 7a74476eb5c4dbdaa653ba92f1c189f3
+      size: 33304730
+    - path: models/trained/xgboost_regressor.joblib
       hash: md5
-      md5: 1ac99c4ae22a402cc8843652f62be7c9
-      size: 749185
-    - path: models/trained/SMOTE_random_forest.joblib
-      hash: md5
-      md5: bef19260706f15222a07ce212cbc8e2b
-      size: 16185498
-    - path: models/trained/SMOTE_svm.joblib
-      hash: md5
-      md5: 657dbe1ed38f40ac0b0f78c1d1e0deb5
-      size: 487157
-    - path: models/trained/SMOTE_xgboost.joblib
-      hash: md5
-      md5: 00e83cffd7643daf467d1a763138c960
-      size: 940252
-    - path: models/trained/Tomek_knn.joblib
-      hash: md5
-      md5: bf6e2251d5008d94e8419818f86f231b
-      size: 689126
-    - path: models/trained/Tomek_logistic_regression.joblib
-      hash: md5
-      md5: 2e161f313e291fe20e0ae460771240bc
-      size: 1167
-    - path: models/trained/Tomek_mlp.joblib
-      hash: md5
-      md5: d468fa08e968b7e8915c1b4b36f9f3f3
-      size: 744680
-    - path: models/trained/Tomek_random_forest.joblib
-      hash: md5
-      md5: f4d06262e7525eaf7f5dc7ff40f97698
-      size: 12075553
-    - path: models/trained/Tomek_svm.joblib
-      hash: md5
-      md5: 64fc815bb5ca32dc0d23665bff2524bf
-      size: 353747
-    - path: models/trained/Tomek_xgboost.joblib
-      hash: md5
-      md5: 4747a0afabbda214d1c868c3d3a1b7c4
-      size: 852195
+      md5: f5e7004e7452b077c67f668f56d79a50
+      size: 1598996
     - path: reports/training_report.json
       hash: md5
-      md5: 1773497dc523e140c9d81716bfe5a72f
-      size: 1561
+      md5: a129836163d7182c4f0a095400114b0d
+      size: 861
+  evaluate:
+    cmd: python3 src/evaluate.py
+    deps:
+    - path: data/processed/splits/test.parquet
+      hash: md5
+      md5: 19902c0434b32c5149f66f79d862752a
+      size: 33204
+    - path: models/best_model.pkl
+      hash: md5
+      md5: 73d768ae62cc649b4577f3bef02faaba
+      size: 33305018
+    - path: models/trained/hist_gradient_boosting_regressor.joblib
+      hash: md5
+      md5: 5d58e20cf84ffdf572680d1c9347e662
+      size: 1466921
+    - path: models/trained/random_forest_regressor.joblib
+      hash: md5
+      md5: 7a74476eb5c4dbdaa653ba92f1c189f3
+      size: 33304730
+    - path: models/trained/xgboost_regressor.joblib
+      hash: md5
+      md5: f5e7004e7452b077c67f668f56d79a50
+      size: 1598996
+    - path: src/evaluate.py
+      hash: md5
+      md5: b044eb3f067120ff56935bdc9dff4c01
+      size: 5127
+    outs:
+    - path: reports/confusion_matrix_best_bundle.png
+      hash: md5
+      md5: 80672d78530e15ede14034b5e222f201
+      size: 30947
+    - path: reports/evaluation_report.json
+      hash: md5
+      md5: 146ac649c0a49fddfa9df28b43bed34b
+      size: 692
