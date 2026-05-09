@@ -1,8 +1,10 @@
 # 🍷 Wine Quality Prediction - Apresentação Completa do Projeto
 
-**Autor:** Equipe de ML  
+**Autor:** Equipe de ML (Felipe Botero, Hanna Souza e José Henrique)
 **Data:** Maio 2026  
-**Status:** ✅ Em produção (Docker + API + UI)
+**Status:** ✅ Em produção (Docker + nginx + API + UI)
+
+> **Operação e deploy (comandos, variáveis, troubleshooting):** use o [`README.md`](README.md) e o [`.env.example`](.env.example) como referência atualizada. Este documento resume o trabalho de ML e a arquitetura em alto nível.
 
 ---
 
@@ -55,11 +57,20 @@ Classificar vinhos em **duas categorias** (bom/ruim) baseado em 11 atributos fí
 └──────────────┬──────────────────────┘
                │
 ┌──────────────▼──────────────────────┐
-│  FastAPI + Streamlit (Docker)       │
-│  • /predict endpoint (porta 8000)   │
-│  • UI interativa (porta 8501)       │
+│  MLflow Registry (DagsHub)          │
+│  • Modelo @production em runtime    │
+└──────────────┬──────────────────────┘
+               │
+┌──────────────▼──────────────────────┐
+│  Produção (Docker / Render)         │
+│  • nginx: uma porta pública (PORT)  │
+│  • FastAPI 127.0.0.1:8001 (infer.)  │
+│  • Streamlit 127.0.0.1:8501 (UI)    │
+│  • UI chama API (sem modelo local)  │
 └─────────────────────────────────────┘
 ```
+
+**Desenvolvimento local (sem Docker):** `uvicorn` na porta **8000** e Streamlit em **8501** — o próprio `main.py` pode subir o Streamlit como subprocesso. **Container:** `start.sh` define `MANAGED_BY_SCRIPT=true`, sobe API + Streamlit em loopback e só então o **nginx** na frente.
 
 ---
 
@@ -206,9 +217,9 @@ Dados Brutos
     │   └─→ Confusion matrix + ROC curves
     │   └─→ Saída: reports/{training,evaluation}_report.json
     │
-    └─→ [6] DEPLOY (main.py + Dockerfile)
-        └─→ FastAPI + Streamlit
-        └─→ Docker container (8000 + 8501)
+    └─→ [6] DEPLOY (Dockerfile + start.sh + nginx)
+        └─→ Gateway nginx → FastAPI (127.0.0.1:8001) + Streamlit (127.0.0.1:8501)
+        └─→ Modelo carregado na API a partir do MLflow Registry
 ```
 
 ### [1] INGESTION - `src/ingestion.py`
@@ -1037,186 +1048,129 @@ Interpretação:
 
 ## Deploy em Produção
 
-### Arquitetura Docker
+### Princípios da arquitetura atual
+
+| Aspecto | Comportamento |
+|--------|----------------|
+| **URL pública** | Um único ponto de entrada: **nginx** escuta `PORT` (Render) ou **8080** por padrão local. |
+| **Backend de inferência** | **FastAPI** só em **127.0.0.1:8001** dentro do container — não exposta diretamente ao host. |
+| **Interface** | **Streamlit** em **127.0.0.1:8501** — também só loopback; o navegador fala sempre com o nginx. |
+| **Modelo em runtime** | Carregado **na API** via **MLflow Registry** (DagsHub), referência `@production` / alias Production (`model_loader.py`). Sem fallback para `best_model.pkl` em produção. |
+| **Streamlit** | **Não** carrega modelo: envia `POST` para a API (`API_URL`; no container o `start.sh` define `http://127.0.0.1:8001`). |
+
+---
+
+### Dockerfile (visão fiel ao repositório)
 
 ```dockerfile
-# Dockerfile
-
 FROM python:3.12-slim
-
 WORKDIR /app
 
-# 1. Dependências de sistema
-RUN apt-get update && \
-    apt-get install -y curl && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nginx curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# 2. Dependências Python
-COPY requirements.txt ./
+COPY . .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN chmod +x start.sh
 
-# 3. Código da aplicação
-COPY database.py models.py main.py streamlit_ui.py ./
-COPY supabase_logger.py ./
-COPY models/ ./models/
+# Porta em que o nginx escuta *dentro* do container (Render sobrescreve via PORT)
+EXPOSE 8080
 
-# 4. Exposições
-EXPOSE 8000 8501
-
-# 5. Startup
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["./start.sh"]
 ```
-
-**O que acontece:**
-1. FastAPI sobe em porta 8000
-2. No lifespan, carrega modelo em memória
-3. Inicia Streamlit em porta 8501 como subprocess
-4. Ambos compartilham conexão SQLite/Postgres
 
 ---
 
-### FastAPI - `/predict` Endpoint
+### Orquestração: `start.sh`
 
-```python
-@app.post("/predict", response_model=PredictionResponse)
-def predict(wine: WineFeatures, db: Session = Depends(get_db)):
-    """Prediz qualidade do vinho (0=Not Good, 1=Good)."""
-    
-    start_time = time.time()
-    
-    # 1. Build features dataframe
-    df = _build_dataframe(wine, app.state.model)
-    
-    # 2. Pipeline predict (regressão contínua)
-    y_score = app.state.model["pipeline"].predict(df)[0]
-    
-    # 3. Convert to binary
-    binary_threshold = app.state.model["binary_threshold"]
-    quality = _score_to_class(y_score, binary_threshold)
-    
-    # 4. Probabilidades aproximadas
-    probabilities = _score_to_probabilities(y_score)
-    
-    # 5. Log em DB (SQLite local ou Postgres)
-    log = SimulationLog(
-        predicted_quality=quality,
-        predicted_score=float(y_score),
-        input_data=wine.model_dump(),
-        probabilities=probabilities,
-        elapsed_ms=elapsed_ms
-    )
-    db.add(log)
-    db.commit()
-    
-    # 6. Resposta
-    return {
-        "quality": quality,
-        "quality_label": CLASS_LABELS[quality],
-        "predicted_score": y_score,
-        "probabilities": probabilities,
-        "elapsed_ms": elapsed_ms
-    }
-```
+1. Define `MANAGED_BY_SCRIPT=true` e `API_URL=http://127.0.0.1:8001` para o Streamlit apontar para a API interna.
+2. Sobe **FastAPI** com `uvicorn main:app --host 127.0.0.1 --port 8001`.
+3. Sobe **Streamlit** em `127.0.0.1:8501` (headless).
+4. **Espera ativa** até `http://127.0.0.1:8001/health` e `/_stcore/health` do Streamlit responderem (evita nginx retornar **502** antes dos upstreams estarem prontos).
+5. Gera config do **nginx** a partir de `nginx.docker.conf.template` (substitui a porta de escuta).
+6. Executa **nginx** em foreground (`daemon off`).
 
-**Endpoints:**
+No **lifespan** do FastAPI, o modelo é carregado antes de aceitar tráfego; o pull do Registry ocorre **no servidor** (não aparece na aba Network do browser).
+
+---
+
+### Gateway nginx (`nginx.docker.conf.template`)
+
+Encaminhamento típico:
+
+- **`/docs`**, **`/openapi.json`**, **`/redoc`**, **`/predict`**, **`/health`**, **`/simulations`** → **FastAPI** (8001).
+- **`/`** (e WebSocket do Streamlit) → **Streamlit** (8501).
+
+Assim, com um único mapeamento de porta no host (ex.: `80:8080`), o usuário abre **`http://localhost/`** para a UI e **`http://localhost/docs`** para o Swagger — sem alternar portas manualmente.
+
+---
+
+### FastAPI — startup e `/predict`
+
+No startup, a API chama `require_model_bundle_for_api()` (somente Registry). O handler de predição segue a mesma ideia: montar o dataframe de features, regredir a nota contínua, aplicar o threshold do bundle, registrar simulação no banco e devolver JSON.
+
+**Endpoints expostos atrás do nginx (mesmo host e porta):**
+
 ```
-GET  /health              → Healthcheck (para K8s, Render, etc)
-POST /predict             → Predição de um vinho
+GET  /health              → Saúde da API (via location específica no nginx)
+POST /predict             → Predição
 GET  /simulations         → Histórico de predições
+GET  /docs                → Swagger UI
 ```
 
 ---
 
-### Streamlit UI
+### Streamlit UI (produção)
 
-#### Tab 1: 🔮 Predição
-
-```
-┌─────────────────────────────────────────┐
-│ Deslizadores para 11 features           │
-│ fixed_acidity: [7.4 ────────────── 0]   │
-│ volatile_acidity: [0.7 ───────── 0]     │
-│ ...                                      │
-│ alcohol: [9.4 ───────────────── 0]     │
-│ type: [Red ▼] / White                   │
-├─────────────────────────────────────────┤
-│ [🔮 PREDIZER]                            │
-├─────────────────────────────────────────┤
-│ RESULTADO:                              │
-│ ✅ Qualidade: Good (1)                  │
-│ Probabilidade:                          │
-│   Not Good: 28.3% ▌▌▌                   │
-│   Good:     71.7% ▌▌▌▌▌▌▌▌▌▌           │
-│ Score previsto: 7.23                    │
-└─────────────────────────────────────────┘
-```
-
-#### Tab 2: 📊 Comparação (NOVO)
-
-```
-┌─────────────────────────────────────────┐
-│ Validação vs Teste                      │
-├─────────────────────────────────────────┤
-│ Random Forest:                          │
-│ Val F1:  87.44% ████████████████        │
-│ Test F1: 86.92% ███████████████         │
-│ Diferença: 0.52%                        │
-│                                          │
-│ XGBoost:                                │
-│ Val F1:  86.53%                         │
-│ Test F1: 87.01% (overfitting negativo?) │
-│                                          │
-│ HistGB:                                 │
-│ Val F1:  85.74%                         │
-│ Test F1: 86.06%                         │
-└─────────────────────────────────────────┘
-```
-
-#### Tab 3: 📜 Histórico
-
-```
-┌─────────────────────────────────────────┐
-│ Simulações Registradas (últimas 10)     │
-├─────────────────────────────────────────┤
-│ 1. 2026-05-07 20:15 Good (1) ✅ 7.23   │
-│ 2. 2026-05-07 20:14 Bad (0)  ❌ 5.11   │
-│ 3. 2026-05-07 20:13 Good (1) ✅ 6.84   │
-│ ...                                      │
-│ Total de Predições: 47                  │
-│ Últimas 24h: 12                         │
-└─────────────────────────────────────────┘
-```
+- Sidebar informa **predição via API** (modelo só no backend).
+- Sliders + botão disparam chamada HTTP à API; métricas de treino/avaliação podem continuar lidas de arquivos locais no container quando presentes.
 
 ---
 
-### Build e Deploy
+### Build e execução local (Docker)
 
-#### Local
+Exemplo alinhado ao README:
+
 ```bash
-docker build -t wine-quality .
-docker run -d -p 8000:8000 -p 8501:8501 wine-quality
-
-# Acessar
-http://localhost:8000/health       # API
-http://localhost:8501              # UI
+docker compose up --build
+# UI:    http://localhost/          (mapeamento típico 80 → 8080 do container)
+# Docs:  http://localhost/docs
+curl http://localhost/health
 ```
 
-#### Produção (Render)
+Evite `PORT=8501` no `.env` usado pelo Docker — esse valor era de desenvolvimento Streamlit isolado e **quebra** o alinhamento com a porta onde o nginx escuta. O [`docker-compose.yml`](docker-compose.yml) do repositório força `PORT=8080` no serviço para sobrepor valores legados no `.env`.
+
+---
+
+### Render (`render.yaml`)
+
+O blueprint usa **Docker**, injeta variáveis sensíveis via painel e inclui, entre outras, `MODEL_PREFER_REGISTRY=true`. Exemplo de trecho:
+
 ```yaml
-# render.yaml
 services:
   - type: web
-    name: wine-quality-classifier
     runtime: docker
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /health
+    healthCheckPath: /_stcore/health   # Streamlit na rota raiz via nginx
     envVars:
-      - key: DATABASE_URL
-        value: "postgresql://..."
-      - key: SUPABASE_URL
-        value: "..."
-    autoDeploy: true
+      - key: ENVIRONMENT
+        value: production
+      - key: MODEL_PREFER_REGISTRY
+        value: "true"
 ```
+
+**Health check:** na URL pública do serviço, tanto **`/_stcore/health`** (Streamlit) quanto **`/health`** (API) são válidos; o blueprint atual usa `/_stcore/health`. Detalhes e variáveis completas: [`README.md`](README.md).
+
+---
+
+### Desenvolvimento sem Docker (resumo)
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Sem `MANAGED_BY_SCRIPT`, o `main.py` pode iniciar o Streamlit na **8501**; o `.env` pode manter `API_URL=http://localhost:8000`.
 
 ---
 
@@ -1249,10 +1203,10 @@ services:
 - HistGB 🥉 86%
 
 ✅ **Deploy em Produção**
-- FastAPI /predict endpoint
-- Streamlit UI interativa
-- Docker container completo
-- SQLite local ou Postgres
+- Gateway **nginx** + FastAPI (inferência) + Streamlit (UI que chama a API)
+- Modelo servido via **MLflow Registry** na API; variáveis e troubleshooting no README
+- **Docker** com `start.sh` (espera por health interno antes do nginx)
+- Banco: Postgres (ex.: Supabase) em produção; fluxo documentado no repositório
 
 ✅ **Melhorias Documentadas**
 - 69% acurácia (antes) → 87% (depois)
@@ -1343,17 +1297,16 @@ foi crucial para remover leakage
 
 ---
 
-### Métricas Finais
+### Métricas Finais (offline / relatórios de treino e teste)
 
-| KPI | Target | Alcançado | Status |
-|-----|--------|-----------|--------|
-| Test F1-Score | >85% | 86.92% | ✅ Excedido |
-| Test Acurácia | >85% | 87.85% | ✅ Excedido |
-| Precision | >90% | 92.8% | ✅ Excelente |
-| Recall | >80% | 83.5% | ✅ Bom |
-| Latência /predict | <100ms | ~50ms | ✅ Rápido |
-| Uptime | >99% | ~99.8% (local) | ✅ Confiável |
-| Data Leakage | Zero | 0 (verificado) | ✅ Seguro |
+| KPI | Target | Referência (texto acima) | Status |
+|-----|--------|---------------------------|--------|
+| Test F1-Score | >85% | ~86.92% (RF no conjunto de teste) | ✅ Excedido |
+| Test Acurácia | >85% | ~87.85% | ✅ Excedido |
+| Precision / Recall | — | Ilustrados na matriz de confusão | ✅ |
+| Latência `/predict` | <100ms | Depende de hardware e cold start do Registry | Verificar em produção |
+| Uptime | >99% | Depende do provedor (ex.: Render) | — |
+| Data Leakage | Zero | Pipeline train/val/test separado | ✅ |
 
 ---
 
@@ -1366,9 +1319,9 @@ Este projeto demonstra uma **jornada completa de ML em produção**, desde explo
 - 🛠️ Feature engineering contribuiu +5-6% sem aumentar complexidade
 - 📦 Pipeline modular removeu data leakage, garantindo confiabilidade
 - 🏆 Random Forest venceu por generalização (overfitting mínimo)
-- 🚀 Pronto para produção com Docker, API e UI
+- 🚀 Deploy com **nginx**, API em Registry e UI consumindo a API (documentação operacional no README)
 
-**O projeto está em produção e preparado para escalar.**
+**O projeto está em produção; parâmetros de nuvem e env seguem o README.**
 
 ---
 
@@ -1389,6 +1342,6 @@ Caso utilize macOS, você pode encontrar erros de dependências binárias. Aqui 
 ---
 
 **Autores:** Equipe de ML  
-**Repositório:** [wine_project](https://github.com/jhscavalcante/wine_quality)  
+**Repositório:** [wine_quality](https://github.com/jhscavalcante/wine_quality)  
 **Data:** Maio 2026  
-**Status:** ✅ Production-Ready
+**Status:** ✅ Em produção — detalhes de deploy em [`README.md`](README.md)

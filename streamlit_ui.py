@@ -1,4 +1,7 @@
-"""Streamlit UI — Wine Quality Classifier (binary: Not Good / Good)."""
+"""Streamlit UI — Wine Quality Classifier (binary: Not Good / Good).
+
+Predição: POST para a FastAPI (`API_URL`); o modelo não é carregado neste processo.
+"""
 
 from __future__ import annotations
 
@@ -21,8 +24,8 @@ for env_path in [ROOT / ".env", Path.cwd() / ".env"]:
     if env_path.exists():
         load_dotenv(env_path, override=False)
 
-MODEL_FALLBACK = ROOT / "models" / "best_model.pkl"
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+MODEL_FALLBACK = ROOT / "models" / "best_model.pkl"  # legado; inferência não usa pickle nesta UI
+API_URL = os.getenv("API_URL", "http://localhost:8000")  # no Docker, start.sh define http://127.0.0.1:8001
 EVALUATION_REPORT_PATH = ROOT / "reports" / "evaluation_report.json"
 TRAINING_REPORT_PATH = ROOT / "reports" / "training_report.json"
 

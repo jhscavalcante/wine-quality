@@ -20,7 +20,7 @@ A estratégia oficial é **regressão da nota (`quality_raw`) + threshold binár
 - `src/train.py`: treino com GridSearch e ajuste de threshold binário
 - `src/evaluate.py`: avaliação em teste + confusion matrix
 - `main.py`: API `/predict`, `/health`, `/simulations`
-- `streamlit_ui.py`: interface para predição e monitoramento
+- `streamlit_ui.py`: interface Streamlit; predição envia POST para a API (o modelo roda só no backend FastAPI)
 
 ## Fonte de Dados (Source of Truth)
 
@@ -32,7 +32,7 @@ Fluxo oficial:
    - tenta ler a tabela no Supabase (`SUPABASE_TABLE`);
    - se estiver vazia, baixa `winequalityN.csv` via Kaggle CLI, faz seed no Supabase e reconsulta;
    - salva snapshot local em `data/raw/wine_quality.csv`.
-4. Executar `src/preprocessing.py`, que consome `data/raw/wine_quality.csv` com DuckDB e gera `data/processed/wine_processed.parquet`.
+3. Executar `src/preprocessing.py`, que consome `data/raw/wine_quality.csv` com DuckDB e gera `data/processed/wine_processed.parquet`.
 
 Resumo visual:
 `Kaggle (winequalityN.csv) -> Supabase -> data/raw/wine_quality.csv -> DuckDB preprocessing -> data/processed/*`
@@ -101,11 +101,15 @@ mlflow ui --host 127.0.0.1 --port 5000
 ```
 > **⚠️ Nota:** Se você usa DagsHub, os registros de métricas e parâmetros são enviados apenas para o servidor remoto. Por isso, a interface do MLflow rodando localmente não mostrará essas execuções. Use sempre o IP `127.0.0.1` para evitar erro 403 em versões recentes do MLflow.
 
-### 5) Testar a predição
-Primeiro, suba a API FastAPI. Ela serve predições na porta 8000 e também inicializa o Streamlit automaticamente na porta 8501:
+### 5) Testar a predição (desenvolvimento local, sem Docker)
+
+Suba a API FastAPI na porta **8000**. Por padrão ela também inicia o Streamlit na porta **8501** (salvo quando `MANAGED_BY_SCRIPT=true`, usado pelo [`start.sh`](start.sh) no container):
+
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+O Streamlit usa `API_URL` (veja [`.env.example`](.env.example)); em dev típico deixa o padrão `http://localhost:8000`, alinhado ao comando acima.
 
 > Em ambas as opções abaixo, as predições são registradas automaticamente no **banco local** e no **Supabase**.
 
@@ -186,7 +190,12 @@ curl http://localhost/simulations
 
 **Download do modelo no MLflow:** roda **no servidor** (Python); a aba *Network* do navegador não mostra esse tráfego. Veja os logs com `docker logs` ou o terminal do `compose`.
 
-**UI API-only:** o Streamlit não carrega modelo local/Registry; toda inferência passa pela API.
+**UI API-only:** o Streamlit não carrega modelo local nem Registry; toda inferência é feita pela FastAPI (que carrega o modelo no startup).
+
+**Troubleshooting (502 / página “Carregando…”):**
+- Aguarde o fim do **pull do modelo** no MLflow Registry (credenciais `DAGSHUB_*`, `MLFLOW_*` corretas); falhas aparecem nos logs da API.
+- Confirme que **não** há `PORT=8501` no `.env` usado pelo Docker (isso desalinha o nginx).
+- O [`start.sh`](start.sh) só sobe o nginx depois que `/health` (API) e `/_stcore/health` (Streamlit internos) respondem; se o build passar mas o serviço falhar depois, revise variáveis e timeout `MLFLOW_MODEL_LOAD_TIMEOUT_SEC`.
 
 ### 7) Publicar no GitHub
 Crie um novo repositório no GitHub com o nome `wine-quality` e execute os comandos abaixo no terminal da raiz do projeto:
@@ -225,18 +234,22 @@ Siga os passos abaixo para hospedar sua aplicação (API + UI) no Render usando 
      - `DAGSHUB_REPO_NAME`: Nome do repositório no DagsHub (`wine-quality`).
      - `DAGSHUB_TOKEN`: Seu token de acesso do DagsHub.
      - `MLFLOW_TRACKING_URI`: URI do MLflow (geralmente a do DagsHub).
-     - `MLFLOW_MODEL_NAME`: Nome do modelo (padrão: `wine-quality-binary`).
+     - `MLFLOW_MODEL_NAME`: Nome do modelo no Registry (padrão: `wine-quality-binary`).
+     - `MLFLOW_MODEL_LOAD_TIMEOUT_SEC`: Timeout em segundos para carregar o modelo do Registry (ex.: `120`).
+     - `MODEL_PREFER_REGISTRY`: Deve ser `true` em produção (política atual: somente Registry, sem pickle local).
      - `DB_STARTUP_RETRIES`: Número de tentativas de conexão ao banco (recomendado: `3`).
      - `AUTO_SQLITE_FALLBACK`: Se `true`, usa SQLite caso o Postgres falhe.
 6. **Publicação:**
    - Clique em **Create Web Service** ou **Deploy Web Service**.
 7. **Verificação:**
    - O Render iniciará o build da imagem Docker. Quando o status mudar para **Live**, sua aplicação estará pública.
-   - **Uma porta pública:** o Render define `PORT`; o **nginx** no container escuta esse valor e encaminha `/` para Streamlit e `/docs`, `/predict`, etc. para FastAPI (`127.0.0.1:8001`).
-   - Health check do Blueprint [`render.yaml`](render.yaml): `/_stcore/health` (Streamlit via nginx). Se configurar manualmente no painel, use o mesmo caminho.
+   - **Uma porta pública:** o Render define `PORT`; o **nginx** no container escuta esse valor e encaminha `/` para Streamlit e `/docs`, `/predict`, `/health`, etc. para FastAPI em `127.0.0.1:8001`.
+   - **Health check:** duas opções válidas na URL pública do serviço:
+     - `GET /health` — verifica a API de inferência (recomendado se o painel permitir escolher o caminho).
+     - `GET /_stcore/health` — verifica o Streamlit (é o caminho usado no Blueprint [`render.yaml`](render.yaml)); o nginx encaminha para o upstream correto.
 
 > [!TIP]
-> **Modelo (política atual):** O runtime carrega modelo somente do **MLflow Registry** (`@production`) e falha explicitamente se o Registry/credenciais não estiverem disponíveis (sem fallback para arquivo local).
+> **Modelo (política atual):** A FastAPI carrega o modelo **somente** do **MLflow Registry** (referências `@production` / alias Production em [`model_loader.py`](model_loader.py)) e falha com mensagem explícita se Registry ou credenciais estiverem indisponíveis. Não há fallback para `models/best_model.pkl` em runtime de API.
 
 ## Métricas oficiais
 - Treino/validação: `reports/training_report.json`

@@ -57,6 +57,7 @@ wait_http() {
   echo "✅ ${name} pronto."
 }
 
+# Evita 502 no nginx se os upstreams ainda não estiverem aceitando conexões
 wait_http "FastAPI" "http://127.0.0.1:8001/health" "$STARTUP_TIMEOUT_SEC"
 wait_http "Streamlit" "http://127.0.0.1:${INTERNAL_STREAMLIT_PORT}/_stcore/health" "$STARTUP_TIMEOUT_SEC"
 
