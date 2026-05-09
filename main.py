@@ -138,7 +138,18 @@ async def lifespan(app: FastAPI):
     """
     global _streamlit_proc
 
-    # 1. Inicia o Streamlit PRIMEIRO (para o Render ver a porta 8000 aberta logo)
+    def startup_tasks():
+        """Tarefa em segundo plano para não travar o startup do container."""
+        try:
+            print("[main] Iniciando tarefas pesadas em background...")
+            database.wait_for_db()
+            Base.metadata.create_all(bind=database.engine)
+            app.state.model = _load_model()
+            print("[main] ✅ Banco e Modelo carregados com sucesso!")
+        except Exception as e:
+            print(f"[main] ❌ Erro no carregamento em background: {e}")
+
+    # 1. Inicia o Streamlit IMEDIATAMENTE com flags de proxy
     if STREAMLIT_UI.exists():
         _streamlit_proc = subprocess.Popen(
             [
@@ -150,16 +161,17 @@ async def lifespan(app: FastAPI):
                 "--server.port=8000",
                 "--server.address=0.0.0.0",
                 "--server.headless=true",
+                "--server.enableCORS=false",
+                "--server.enableXsrfProtection=false",
             ]
         )
         print(f"[main] Streamlit iniciado (PID={_streamlit_proc.pid}) na porta 8000")
 
-    # 2. Agora faz as tarefas pesadas (Banco e Modelo)
-    database.wait_for_db()
-    Base.metadata.create_all(bind=database.engine)
-    app.state.model = _load_model()
+    # 2. Dispara o carregamento pesado em uma Thread separada
+    import threading
+    threading.Thread(target=startup_tasks, daemon=True).start()
 
-    yield  # a aplicação fica em execução aqui
+    yield
 
     if _streamlit_proc is not None:
         _streamlit_proc.terminate()
