@@ -1,3 +1,15 @@
+"""
+Módulo de ingestão de dados do dataset Wine Quality.
+
+Fluxo de prioridade para obter os dados:
+  1. Tenta conectar ao Supabase via API REST e buscar a tabela existente.
+  2. Se a tabela não existir, cria automaticamente via SQL (DATABASE_URL)
+     e popula com o CSV do Kaggle (ou fallback local).
+  3. Se o Supabase estiver inacessível e ALLOW_LOCAL_FALLBACK=true,
+     usa o CSV local diretamente.
+
+O resultado final é sempre um CSV em `data/raw/wine_quality.csv`.
+"""
 from __future__ import annotations
 
 import os
@@ -12,21 +24,25 @@ from sqlalchemy import create_engine, text
 from supabase import create_client
 
 ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(str(ROOT / ".env"), override=True)
+load_dotenv(str(ROOT / ".env"), override=True)  # carrega variáveis de ambiente
 
+# Credenciais e config do Supabase (lidas do .env)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-TABLE_NAME = os.getenv("SUPABASE_TABLE", "wine_quality")
+TABLE_NAME = os.getenv("SUPABASE_TABLE", "wine_quality")  # nome da tabela no Supabase
+# URL Postgres direta (usada para DDL e seed via SQLAlchemy)
 DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip().strip('"').strip("'")
+# Se True, usa CSV local quando Supabase falhar (modo offline)
 ALLOW_LOCAL_FALLBACK = os.getenv("ALLOW_LOCAL_FALLBACK", "false").lower() == "true"
 
-DEFAULT_SOURCE = ROOT / "data" / "wine_quality.csv"
-DEFAULT_RAW_OUT = ROOT / "data" / "raw" / "wine_quality.csv"
-KAGGLE_RAW_PATH = ROOT / "data" / "raw" / "winequalityN.csv"
+# Caminhos dos arquivos de dados
+DEFAULT_SOURCE = ROOT / "data" / "wine_quality.csv"      # CSV básico local
+DEFAULT_RAW_OUT = ROOT / "data" / "raw" / "wine_quality.csv"  # destino final
+KAGGLE_RAW_PATH = ROOT / "data" / "raw" / "winequalityN.csv"  # CSV baixado do Kaggle
 KAGGLE_DATASET = "rajyellow46/wine-quality"
 KAGGLE_FILE = "winequalityN.csv"
 
-BATCH_SIZE = 500
+BATCH_SIZE = 500  # número de linhas por batch no insert ao Supabase
 
 
 def _get_client():
@@ -41,11 +57,15 @@ RENAME_MAP = {
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Padroniza nomes de colunas: remove espaços, substitui por '_' e torna minúsculos.
+    Em seguida aplica renomeamentos explícitos do RENAME_MAP.
+    """
     df = df.rename(columns=lambda c: c.strip().replace(" ", "_").lower())
     return df.rename(columns=RENAME_MAP)
 
 
 def _infer_pg_type(series: pd.Series) -> str:
+    """Infere o tipo PostgreSQL correspondente ao dtype da coluna pandas."""
     if pd.api.types.is_integer_dtype(series):
         return "integer"
     if pd.api.types.is_float_dtype(series):
@@ -114,6 +134,12 @@ def _json_safe_records(df: pd.DataFrame) -> list[dict]:
 
 
 def fetch_wine_data() -> pd.DataFrame:
+    """Busca todos os registros da tabela no Supabase via API REST paginada.
+
+    Verifica primeiro se a tabela existe (via count). Se não existir, lança
+    RuntimeError com mensagem clara para acionar a criação automática.
+    Usa paginação de 1000 linhas para não ultrapassar limites do PostgREST.
+    """
     client = _get_client()
 
     # Debug: contar registros (falha aqui se tabela não existir)
@@ -139,8 +165,9 @@ def fetch_wine_data() -> pd.DataFrame:
 
     all_rows = []
     page = 0
-    page_size = 1000
+    page_size = 1000  # limite seguro por requisição no Supabase
 
+    # Paginação: continua buscando até receber batch menor que page_size (fim dos dados)
     while True:
         response = (
             client.table(TABLE_NAME)
@@ -232,6 +259,10 @@ def _resolve_seed_source(local_fallback: Path) -> Path:
 
 
 def _seed(source_csv: Path) -> None:
+    """Popula a tabela no Supabase via API REST em lotes (BATCH_SIZE linhas por vez).
+
+    Usa `insert` (não upsert) pois a tabela é esperada vazia no momento do seed.
+    """
     print("[ingestion] Iniciando seed (upsert)…")
     df = _load_csv(source_csv)
     records = _json_safe_records(df)

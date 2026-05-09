@@ -26,6 +26,6 @@ services:
     healthCheckInterval: 30
 
     # Auto-deploy from GitHub
-    repo: https://github.com/frpbotero/wine_quality
+    repo: https://github.com/jhscavalcante/wine_quality
     branch: master
     autoDeploy: true

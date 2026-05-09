@@ -21,15 +21,15 @@ stages:
     outs:
     - path: data/processed/wine_processed.parquet
       hash: md5
-      md5: 83b1e5c04fa796153ea27c3b26475c95
-      size: 99823
+      md5: dba058379a2a0e2fdc82200089336105
+      size: 99870
   prepare:
     cmd: python3 src/prepare_data.py
     deps:
     - path: data/processed/wine_processed.parquet
       hash: md5
-      md5: 83b1e5c04fa796153ea27c3b26475c95
-      size: 99823
+      md5: dba058379a2a0e2fdc82200089336105
+      size: 99870
     - path: src/prepare_data.py
       hash: md5
       md5: 72ba7c992ceb170dccd720dd3fc575cf
@@ -69,7 +69,7 @@ stages:
       size: 56083354
     - path: models/trained/hist_gradient_boosting_regressor.joblib
       hash: md5
-      md5: 413f26d5901068c9831948d844960e7f
+      md5: b6155d0011f1becbf76243e7b2df4e0c
       size: 1395801
     - path: models/trained/random_forest_regressor.joblib
       hash: md5
@@ -77,12 +77,12 @@ stages:
       size: 56083082
     - path: models/trained/xgboost_regressor.joblib
       hash: md5
-      md5: 6ed764aaa99230a080fac9b9cc469d7a
-      size: 1580984
+      md5: 6ae6ee5932309117307562836ce01d69
+      size: 1619221
     - path: reports/training_report.json
       hash: md5
-      md5: 24014dfae1ef1e7ffe66acb2e4329728
-      size: 858
+      md5: 5515eb4af207d11ed19a8bf6b81a4f2d
+      size: 860
   evaluate:
     cmd: python3 src/evaluate.py
     deps:
@@ -96,7 +96,7 @@ stages:
       size: 56083354
     - path: models/trained/hist_gradient_boosting_regressor.joblib
       hash: md5
-      md5: 413f26d5901068c9831948d844960e7f
+      md5: b6155d0011f1becbf76243e7b2df4e0c
       size: 1395801
     - path: models/trained/random_forest_regressor.joblib
       hash: md5
@@ -104,8 +104,8 @@ stages:
       size: 56083082
     - path: models/trained/xgboost_regressor.joblib
       hash: md5
-      md5: 6ed764aaa99230a080fac9b9cc469d7a
-      size: 1580984
+      md5: 6ae6ee5932309117307562836ce01d69
+      size: 1619221
     - path: src/evaluate.py
       hash: md5
       md5: b044eb3f067120ff56935bdc9dff4c01
@@ -113,12 +113,12 @@ stages:
     outs:
     - path: reports/confusion_matrix_best_bundle.png
       hash: md5
-      md5: 07b8cd961c78f6e9346699e77fc2202e
-      size: 32021
+      md5: b14993cfcc60568bf4ba0b245e4adaba
+      size: 27762
     - path: reports/evaluation_report.json
       hash: md5
-      md5: 3f6f4bf31caf4e8c55d6987a3280808f
-      size: 691
+      md5: e3d077d359db5c5f5eb962267787a295
+      size: 689
   prepare_supabase_predictions_table:
     cmd: python3 src/prepare_supabase_predictions_table.py
     deps:
@@ -133,5 +133,5 @@ stages:
     outs:
     - path: reports/supabase_predictions_table_ready.txt
       hash: md5
-      md5: 9420ce4b2d7449ede3d5d1b468d1d97b
+      md5: 6678432fcf4f10f547b464bc00d39271
       size: 159

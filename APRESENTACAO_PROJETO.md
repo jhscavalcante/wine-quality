@@ -1372,7 +1372,23 @@ Este projeto demonstra uma **jornada completa de ML em produção**, desde explo
 
 ---
 
+### ⚠️ Dicas para Desenvolvedores (macOS)
+Caso utilize macOS, você pode encontrar erros de dependências binárias. Aqui estão as soluções:
+
+1. **Erro do XGBoost (`libxgboost.dylib`):** Instale o suporte ao OpenMP:
+   ```bash
+   brew install libomp
+   ```
+
+2. **Erro de compressão do MLflow (`_lzma`):** Se o erro for `No module named '_lzma'`, instale o `xz` e reinstale o Python:
+   ```bash
+   brew install xz
+   pyenv install 3.12.12  # Reinstalação necessária para compilar com suporte a LZMA
+   ```
+
+---
+
 **Autores:** Equipe de ML  
-**Repositório:** [wine_project](https://github.com/frpbotero/wine_quality)  
+**Repositório:** [wine_project](https://github.com/jhscavalcante/wine_quality)  
 **Data:** Maio 2026  
 **Status:** ✅ Production-Ready

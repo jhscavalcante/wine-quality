@@ -29,7 +29,7 @@ TRAINING_REPORT_PATH = ROOT / "reports" / "training_report.json"
 # MLflow remote tracking (DagsHub)
 MLFLOW_TRACKING_URI = os.getenv(
     "MLFLOW_TRACKING_URI",
-    "https://dagshub.com/frpbotero/wine_project.mlflow"
+    "https://dagshub.com/jhscavalcante/wine_project.mlflow"
 )
 
 CLASS_LABELS = {0: "🔴 Not Good", 1: "🟢 Good"}
@@ -356,7 +356,8 @@ with tab_predict:
         }
 
         try:
-            quality, proba, classes, predicted_score = _predict_local(payload)
+            # Agora usamos a API para garantir que o log seja feito no banco local e no Supabase
+            quality, proba, classes, predicted_score = _predict_api(payload)
 
             label = CLASS_LABELS.get(quality, str(quality))
             q_idx = classes.index(quality) if quality in classes else 0
@@ -386,29 +387,8 @@ with tab_predict:
                 }
             )
             
-            # Salvar no Supabase
-            try:
-                proba_dict = {
-                    CLASS_LABELS.get(classes[i], str(classes[i])).replace("🔴 ", "").replace("🟢 ", ""): proba[i]
-                    for i in range(len(proba))
-                }
-                saved = supabase_logger.log_prediction(
-                    features=payload,
-                    predicted_quality=quality,
-                    quality_label=label.replace("🔴 ", "").replace("🟢 ", ""),
-                    probabilities=proba_dict,
-                    elapsed_ms=0
-                )
-                if saved:
-                    st.success("✅ Predição salva no Supabase!")
-                else:
-                    reason = supabase_logger.get_last_error()
-                    msg = "⚠️ Supabase não salvou. Verifique tabela/permissões/envs."
-                    if reason:
-                        msg = f"{msg}\n\nDetalhe: {reason}"
-                    st.warning(msg)
-            except Exception as e:
-                st.warning(f"⚠️ Não foi possível salvar no Supabase: {e}")
+            # O log no Supabase e no Banco Local agora é feito automaticamente pela API
+            st.success("✅ Predição processada e registrada!")
                 
         except Exception as exc:
             st.error(f"Erro na predição: {exc}")

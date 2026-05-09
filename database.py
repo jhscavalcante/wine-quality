@@ -13,11 +13,14 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 logger = logging.getLogger(__name__)
 
+# Lê DATABASE_URL do ambiente; padrão SQLite para desenvolvimento local
 DATABASE_URL = (os.getenv("DATABASE_URL", "sqlite:///./wine.db") or "").strip().strip('"').strip("'")
-SQLITE_FALLBACK_URL = "sqlite:///./wine.db"
+SQLITE_FALLBACK_URL = "sqlite:///./wine.db"  # banco local de emergência
+# Se True, substitui DB remoto por SQLite caso a conexão falhe
 AUTO_SQLITE_FALLBACK = (os.getenv("AUTO_SQLITE_FALLBACK", "true") or "true").lower() == "true"
+# Número de tentativas de conexão na inicialização (0 = usa SQLite imediatamente)
 DB_STARTUP_RETRIES = int((os.getenv("DB_STARTUP_RETRIES", "0") or "0").strip())
-DB_STARTUP_DELAY_SEC = float((os.getenv("DB_STARTUP_DELAY_SEC", "2") or "2").strip())
+DB_STARTUP_DELAY_SEC = float((os.getenv("DB_STARTUP_DELAY_SEC", "2") or "2").strip())  # segundos entre tentativas
 
 engine = SessionLocal = None  # type: ignore  # inicializados em connect()
 
@@ -26,12 +29,16 @@ def _is_sqlite_url(url: str) -> bool:
     return url.startswith("sqlite")
 
 def _build_engine():
+    """Cria o engine SQLAlchemy e a SessionLocal com base na DATABASE_URL atual.
+
+    SQLite requer `check_same_thread=False` para funcionar com FastAPI async.
+    """
     global engine, SessionLocal
     if _is_sqlite_url(DATABASE_URL):
         engine = create_engine(
             DATABASE_URL,
             pool_pre_ping=True,
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False},  # necessário para SQLite + threads
         )
     else:
         engine = create_engine(DATABASE_URL, pool_pre_ping=True)

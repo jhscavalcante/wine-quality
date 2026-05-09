@@ -65,7 +65,15 @@ DEFAULT_BINARY_THRESHOLD = 6.5
 
 
 def _load_model():
-    """Carrega o modelo via MLflow Registry ou fallback local (joblib)."""
+    """Carrega o modelo via MLflow Registry ou fallback local (joblib).
+
+    Preferência:
+    1. MLflow Registry remoto: tenta alias @champion, depois stage Production.
+    2. Arquivo local `best_model.pkl` (bundle com pipeline + threshold).
+    3. Qualquer arquivo .pkl encontrado nos caminhos candidatos.
+
+    Sempre retorna um dict com chaves 'pipeline' e 'binary_threshold'.
+    """
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "")
     username = os.getenv("DAGSHUB_USERNAME", "")
     token = os.getenv("DAGSHUB_TOKEN", "")
@@ -89,6 +97,7 @@ def _load_model():
         except Exception as exc:
             print(f"[main] MLflow falhou ({exc}), usando fallback local.")
 
+    # Caminhos candidatos para o bundle local (container e desenvolvimento local)
     candidate_paths = [
         Path(MODEL_PATH),
         Path(__file__).resolve().parent / "models" / "best_model.pkl",
@@ -117,6 +126,16 @@ _streamlit_proc: subprocess.Popen | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Gerencia o ciclo de vida da aplicação FastAPI.
+
+    Na inicialização (before yield):
+      - Aguarda o banco de dados estar disponível e cria as tabelas.
+      - Carrega o modelo ML no estado compartilhado `app.state.model`.
+      - Inicializa o Streamlit como subprocesso na porta 8501.
+
+    No encerramento (after yield):
+      - Termina o processo do Streamlit graciosamente.
+    """
     global _streamlit_proc
 
     # Banco
@@ -148,7 +167,7 @@ async def lifespan(app: FastAPI):
             f"[main] streamlit_ui.py não encontrado em {STREAMLIT_UI}, UI desabilitada."
         )
 
-    yield
+    yield  # a aplicação fica em execução aqui
 
     if _streamlit_proc is not None:
         _streamlit_proc.terminate()
@@ -255,10 +274,16 @@ def _score_to_class(score: float, binary_threshold: float) -> int:
 
 
 def _score_to_probabilities(score: float) -> dict[str, float]:
-    centers = np.array([5.6, 7.2], dtype=float)
-    dist = np.abs(centers - float(score))
-    logits = -dist
-    exps = np.exp(logits - np.max(logits))
+    """Converte um score numérico em probabilidades aproximadas por classe.
+
+    Usa distância dos centros das classes (5.6=Not Good, 7.2=Good) como logits
+    negativos, depois normaliza via softmax. Não é uma probabilidade calibrada,
+    mas fornece uma representação intuitiva da confiança da predição.
+    """
+    centers = np.array([5.6, 7.2], dtype=float)  # centros típicos de cada classe
+    dist = np.abs(centers - float(score))         # distância do score a cada centro
+    logits = -dist                                 # mais perto = logit maior
+    exps = np.exp(logits - np.max(logits))        # softmax numéricamente estável
     probs = exps / np.sum(exps)
     return {
         CLASS_LABELS[0]: round(float(probs[0]), 4),
@@ -279,7 +304,15 @@ def health_check():
 
 @app.post("/predict", response_model=PredictionResponse, tags=["prediction"])
 def predict(wine: WineFeatures, db: Session = Depends(get_db)):
-    """Prediz a qualidade do vinho (0=Not Good, 1=Good)."""
+    """Prediz a qualidade do vinho (0=Not Good, 1=Good).
+
+    Fluxo:
+    1. Extrai o pipeline e o threshold do bundle carregado no lifespan.
+    2. Monta o DataFrame com as features na ordem correta.
+    3. Realiza a predição (score contínuo) e binariza pelo threshold.
+    4. Persiste o log no banco local (SQLite/Postgres) e no Supabase.
+    5. Retorna score, classe, probabilidades e tempo de resposta.
+    """
     model_bundle = app.state.model
     model = model_bundle["pipeline"] if isinstance(model_bundle, dict) else model_bundle
     binary_threshold = float(model_bundle.get("binary_threshold", DEFAULT_BINARY_THRESHOLD)) if isinstance(model_bundle, dict) else DEFAULT_BINARY_THRESHOLD

@@ -1,3 +1,14 @@
+"""
+Módulo de particionamento do dataset processado em treino/val/teste.
+
+Estrátégia de split estratificado (pela label binária) para garantir
+proportions semelhantes da classe Good/Not Good em cada partição:
+  - Treino : 60% dos dados
+  - Validação: 20% (usado para ajustar o limiar de binarização)
+  - Teste  : 20% (avaliação final isolada)
+
+Os splits são salvos em Parquet com as colunas de feature + quality_raw + quality_binary.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,11 +18,11 @@ from sklearn.model_selection import train_test_split
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROCESSED_PATH = ROOT / "data" / "processed" / "wine_processed.parquet"
-SPLITS_DIR = ROOT / "data" / "processed" / "splits"
+PROCESSED_PATH = ROOT / "data" / "processed" / "wine_processed.parquet"  # entrada
+SPLITS_DIR = ROOT / "data" / "processed" / "splits"                       # saída
 
-TARGET_BINARY = "quality_binary"
-TARGET_RAW = "quality_raw"
+TARGET_BINARY = "quality_binary"  # coluna usada para estratificar o split
+TARGET_RAW = "quality_raw"        # coluna de nota numérica
 
 
 def prepare(
@@ -30,6 +41,8 @@ def prepare(
     y_binary = df[TARGET_BINARY].astype(int)
     y_raw = df[TARGET_RAW].astype(float)
 
+    # --- Primeiro split: separa 20% para teste (isolado) ---
+    # stratify=y_binary garante proporção similar de Good/Not Good no teste
     X_temp, X_test, y_bin_temp, y_bin_test, y_raw_temp, y_raw_test = train_test_split(
         X,
         y_binary,
@@ -39,6 +52,8 @@ def prepare(
         stratify=y_binary,
     )
 
+    # --- Segundo split: 25% do restante vira validação (= 20% do total) ---
+    # Resultado final: 60% treino | 20% val | 20% teste
     X_train, X_val, y_bin_train, y_bin_val, y_raw_train, y_raw_val = train_test_split(
         X_temp,
         y_bin_temp,

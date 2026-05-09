@@ -20,8 +20,8 @@ from sqlalchemy import create_engine, text
 
 logger = logging.getLogger(__name__)
 
-_client = None  # inicializado na primeira chamada (lazy)
-_last_error: str | None = None
+_client = None  # cliente Supabase inicializado preguiçosamente (lazy) na 1ª chamada
+_last_error: str | None = None  # guarda o último erro para diagnóstico externo
 
 
 def _get_client():
@@ -41,10 +41,12 @@ SUPABASE_TABLE = os.getenv("SUPABASE_PREDICTIONS_TABLE", "wine_predictions")
 
 
 def _clean_label(label: str) -> str:
+    """Remove emojis de cor do label para armazenar apenas texto puro no banco."""
     return str(label).replace("🔴 ", "").replace("🟢 ", "").strip()
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Conversão segura para float, retornando `default` em caso de falha."""
     try:
         return float(value)
     except Exception:
