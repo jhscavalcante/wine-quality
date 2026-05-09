@@ -22,7 +22,7 @@ for env_path in [ROOT / ".env", Path.cwd() / ".env"]:
         load_dotenv(env_path, override=False)
 
 MODEL_FALLBACK = ROOT / "models" / "best_model.pkl"
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+API_URL = os.getenv("API_URL", "http://localhost:8001")
 EVALUATION_REPORT_PATH = ROOT / "reports" / "evaluation_report.json"
 TRAINING_REPORT_PATH = ROOT / "reports" / "training_report.json"
 

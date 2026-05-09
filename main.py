@@ -154,7 +154,7 @@ async def lifespan(app: FastAPI):
                 "streamlit",
                 "run",
                 str(STREAMLIT_UI),
-                "--server.port=8501",
+                "--server.port=8000",
                 "--server.address=0.0.0.0",
                 "--server.headless=true",
             ],

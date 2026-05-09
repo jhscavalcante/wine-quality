@@ -155,10 +155,10 @@ curl http://localhost:8000/simulations
 1. Certifique-se de que o Docker Desktop (ou daemon do Docker) esteja em execução.
 2. Pare a execução local (Passo 5) pressionando `Ctrl + C` no terminal antes de rodar o Docker para evitar conflito nas portas 8000 e 8501.
 
-Para rodar tudo em container (API + Streamlit juntos):
+Para rodar tudo em container (Streamlit na 8000, API na 8001):
 ```bash
 docker build -t wine-quality .
-docker run -p 8000:8000 -p 8501:8501 --env-file .env wine-quality
+docker run -p 8000:8000 -p 8001:8001 --env-file .env wine-quality
 ```
 
 ### 7) Publicar no GitHub
@@ -198,11 +198,14 @@ Siga os passos abaixo para hospedar sua aplicação (API + UI) no Render usando 
      - `DAGSHUB_REPO_NAME`: Nome do repositório no DagsHub (`wine-quality`).
      - `DAGSHUB_TOKEN`: Seu token de acesso do DagsHub.
      - `MLFLOW_TRACKING_URI`: URI do MLflow (geralmente a do DagsHub).
+     - `MLFLOW_MODEL_NAME`: Nome do modelo (padrão: `wine-quality-binary`).
+     - `DB_STARTUP_RETRIES`: Número de tentativas de conexão ao banco (recomendado: `3`).
+     - `AUTO_SQLITE_FALLBACK`: Se `true`, usa SQLite caso o Postgres falhe.
 6. **Publicação:**
    - Clique em **Create Web Service** ou **Deploy Web Service**.
 7. **Verificação:**
    - O Render iniciará o build da imagem Docker. Quando o status mudar para **Live**, sua aplicação estará pública.
-   - O próprio Render gerencia as portas baseando-se no `EXPOSE` do seu Dockerfile (geralmente a API na 8000 e o Streamlit na 8501, mas o Render costuma mapear a porta principal para o tráfego HTTP).
+   - A interface do **Streamlit** estará disponível na porta principal (8000) e a **API** na porta 8001. O Render mapeia automaticamente a porta do Streamlit para a URL pública.
 
 > [!TIP]
 > **Resiliência do Modelo:** A aplicação está configurada para buscar o melhor modelo automaticamente no **MLflow Model Registry** do DagsHub usando o alias `@production`. Isso garante que, mesmo que o arquivo local `.pkl` não seja enviado para o repositório, a API conseguirá baixar a versão oficial de produção em tempo de execução.
