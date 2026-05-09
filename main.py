@@ -138,14 +138,7 @@ async def lifespan(app: FastAPI):
     """
     global _streamlit_proc
 
-    # Banco
-    database.wait_for_db()
-    Base.metadata.create_all(bind=database.engine)
-
-    # Modelo
-    app.state.model = _load_model()
-
-    # Streamlit como subprocesso
+    # 1. Inicia o Streamlit PRIMEIRO (para o Render ver a porta 8000 aberta logo)
     if STREAMLIT_UI.exists():
         _streamlit_proc = subprocess.Popen(
             [
@@ -157,15 +150,14 @@ async def lifespan(app: FastAPI):
                 "--server.port=8000",
                 "--server.address=0.0.0.0",
                 "--server.headless=true",
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            ]
         )
-        print(f"[main] Streamlit iniciado (PID={_streamlit_proc.pid}) na porta 8501")
-    else:
-        print(
-            f"[main] streamlit_ui.py não encontrado em {STREAMLIT_UI}, UI desabilitada."
-        )
+        print(f"[main] Streamlit iniciado (PID={_streamlit_proc.pid}) na porta 8000")
+
+    # 2. Agora faz as tarefas pesadas (Banco e Modelo)
+    database.wait_for_db()
+    Base.metadata.create_all(bind=database.engine)
+    app.state.model = _load_model()
 
     yield  # a aplicação fica em execução aqui
 
