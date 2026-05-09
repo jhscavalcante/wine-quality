@@ -16,8 +16,8 @@ stages:
       size: 446071
     - path: src/preprocessing.py
       hash: md5
-      md5: 4e6864c011f9f5b339a2b15edd925cb1
-      size: 1628
+      md5: 85c8e1235a6b6030fc0e2a80163d7dd2
+      size: 2526
     outs:
     - path: data/processed/wine_processed.parquet
       hash: md5
@@ -32,8 +32,8 @@ stages:
       size: 99870
     - path: src/prepare_data.py
       hash: md5
-      md5: 72ba7c992ceb170dccd720dd3fc575cf
-      size: 2181
+      md5: 0d46b2d69e16e40f9451b733ce838b8c
+      size: 3025
     outs:
     - path: data/processed/splits/test.parquet
       hash: md5
@@ -60,8 +60,8 @@ stages:
       size: 32979
     - path: src/train.py
       hash: md5
-      md5: 2e5ceefa3d770b73cdc6f7d06ca127b2
-      size: 8599
+      md5: 85d4e2b05cf4f11771a0ee0b94c02b8b
+      size: 13835
     outs:
     - path: models/best_model.pkl
       hash: md5
@@ -92,8 +92,8 @@ stages:
       size: 33084
     - path: models/best_model.pkl
       hash: md5
-      md5: 8c6c21614d3b6cced3c20a6dd62a3635
-      size: 56083354
+      md5: 20a4f6c63d6b6b1d856a7252b226c219
+      size: 56083769
     - path: models/trained/hist_gradient_boosting_regressor.joblib
       hash: md5
       md5: b6155d0011f1becbf76243e7b2df4e0c
@@ -108,8 +108,8 @@ stages:
       size: 1619221
     - path: src/evaluate.py
       hash: md5
-      md5: b044eb3f067120ff56935bdc9dff4c01
-      size: 5127
+      md5: 5de63029b48cdb5a3d57ff385b3da4fe
+      size: 11952
     outs:
     - path: reports/confusion_matrix_best_bundle.png
       hash: md5
@@ -128,10 +128,10 @@ stages:
       size: 1360
     - path: supabase_logger.py
       hash: md5
-      md5: 2850e137aeb33bba18a5e6fd2f71746b
-      size: 6961
+      md5: 9eca6bf18b11bf3e14f35ea309a2537a
+      size: 7203
     outs:
     - path: reports/supabase_predictions_table_ready.txt
       hash: md5
-      md5: 6678432fcf4f10f547b464bc00d39271
+      md5: d91622152899f1335b24eb3f13cbecb0
       size: 159

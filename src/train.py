@@ -9,6 +9,8 @@ Estratégia: regressão + limiar de binarização ajustado.
   3. O modelo com o maior F1 ponderado tuned é salvo como `best_model.pkl`
      (bundle com pipeline + threshold + metadados).
   4. Todas as runs são rastreadas no MLflow (DagsHub ou local).
+  5. O melhor modelo é automaticamente registrado no MLflow Model Registry
+     com o alias `@production` para consumo da API e do script de avaliação.
 """
 from __future__ import annotations
 
@@ -205,6 +207,7 @@ def train() -> None:
     report: dict[str, dict[str, float]] = {}  # acumula métricas por modelo
     best_global_f1 = -1.0                      # rastreia o melhor F1 global
     best_bundle: dict[str, Any] | None = None  # bundle do melhor modelo
+    best_run_id: str | None = None             # run_id da melhor run no MLflow
 
     scorer = _cv_scorer(DEFAULT_BINARY_T)  # scorer customizado para o GridSearch
 
@@ -262,20 +265,27 @@ def train() -> None:
         }
 
         # Registra a run no MLflow com parâmetros, métricas e artefato do modelo
-        with mlflow.start_run(run_name=f"binary_regression_threshold_{model_name}"):
+        with mlflow.start_run(run_name=f"binary_regression_threshold_{model_name}") as run:
             mlflow.log_param("model", model_name)
             mlflow.log_param("strategy", "binary_regression_plus_threshold")
             mlflow.log_param("threshold_binary_t", binary_t)
             for k, v in gs.best_params_.items():
                 mlflow.log_param(k, str(v))  # registra cada hiperparâmetro escolhido
             mlflow.log_metrics(val_metrics)
-            mlflow.sklearn.log_model(best_pipe, artifact_path="model")
+            # Registra o modelo no MLflow Model Registry do DagsHub
+            mlflow.sklearn.log_model(
+                best_pipe,
+                artifact_path="model",
+                registered_model_name="wine-quality-binary",
+            )
+            current_run_id = run.info.run_id
 
         print(f"[train] val_binary_f1_weighted={val_metrics['val_binary_f1_weighted']} tuned={val_metrics['val_binary_f1_weighted_tuned']} t={binary_t:.2f}")
 
         if val_metrics["val_binary_f1_weighted_tuned"] > best_global_f1:
             best_global_f1 = val_metrics["val_binary_f1_weighted_tuned"]
             best_bundle = bundle
+            best_run_id = current_run_id
 
     if best_bundle is None:
         raise RuntimeError("Nenhum modelo foi treinado com sucesso.")
@@ -288,6 +298,26 @@ def train() -> None:
 
     print(f"[train] ✅ Melhor bundle salvo em: {APP_MODEL_PATH}")
     print(f"[train] ✅ Relatório salvo em: {REPORT_PATH}")
+
+    # Atribui o alias @production à versão do melhor modelo no MLflow Registry
+    user = os.getenv("DAGSHUB_USERNAME", "")
+    token = os.getenv("DAGSHUB_TOKEN", "")
+    if best_run_id and user and token:
+        try:
+            from mlflow import MlflowClient
+            client = MlflowClient()
+            # Busca a versão do modelo registrada nesta run
+            versions = client.search_model_versions(f"run_id='{best_run_id}'")
+            if versions:
+                best_version = versions[0].version
+                client.set_registered_model_alias(
+                    "wine-quality-binary", "production", best_version
+                )
+                print(f"[train] ✅ Alias @production → versão {best_version}")
+            else:
+                print("[train] ⚠️ Nenhuma versão encontrada para atribuir alias.")
+        except Exception as exc:
+            print(f"[train] ⚠️ Não foi possível atribuir alias @production: {exc}")
 
 
 if __name__ == "__main__":

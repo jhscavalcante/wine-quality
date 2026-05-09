@@ -86,7 +86,7 @@ def _load_model():
             mlflow.set_tracking_uri(tracking_uri)
             # Try alias @champion first (MLflow >=2.9), fallback to stage Production
             for ref in [
-                f"models:/{model_name}@champion",
+                f"models:/{model_name}@production",
                 f"models:/{model_name}/Production",
             ]:
                 try:

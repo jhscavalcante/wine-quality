@@ -173,6 +173,40 @@ git remote add origin https://github.com/<SEU_USUARIO>/wine-quality.git
 git push -u origin main
 ```
 
+### 8) Configurar o Web Service no Render
+
+Siga os passos abaixo para hospedar sua aplicação (API + UI) no Render usando Docker:
+
+1. **Acesse o Render:** Vá para [render.com](https://render.com) e faça login com sua conta do GitHub.
+2. **Crie um Novo Web Service:**
+   - Clique no botão **New** e selecione **Web Service**.
+3. **Conecte o Repositório:**
+   - Procure pelo seu repositório `wine-quality` e clique em **Connect**.
+4. **Configurações Básicas:**
+   - **Name:** Escolha um nome para seu serviço (ex: `wine-quality-api`).
+   - **Runtime:** O Render deve detectar automaticamente o **Docker**. Caso contrário, selecione-o.
+   - **Plan:** Selecione o plano **Free**.
+5. **Configurar Variáveis de Ambiente:**
+   - Clique em **Advanced** e depois em **Add Environment Variable**.
+   - Adicione as chaves e valores presentes no seu arquivo `.env`. Para este projeto, as essenciais são:
+     - `DATABASE_URL`: URL de conexão direta do Supabase (Postgres).
+     - `SUPABASE_URL`: URL do projeto Supabase.
+     - `SUPABASE_KEY`: Chave API (service_role ou anon) do Supabase.
+     - `SUPABASE_TABLE`: Nome da tabela de dados (ex: `wine_quality`).
+     - `SUPABASE_PREDICTIONS_TABLE`: Tabela para logs de predição (ex: `wine_predictions`).
+     - `DAGSHUB_USERNAME`: Seu usuário no DagsHub.
+     - `DAGSHUB_REPO_NAME`: Nome do repositório no DagsHub (`wine-quality`).
+     - `DAGSHUB_TOKEN`: Seu token de acesso do DagsHub.
+     - `MLFLOW_TRACKING_URI`: URI do MLflow (geralmente a do DagsHub).
+6. **Publicação:**
+   - Clique em **Create Web Service** ou **Deploy Web Service**.
+7. **Verificação:**
+   - O Render iniciará o build da imagem Docker. Quando o status mudar para **Live**, sua aplicação estará pública.
+   - O próprio Render gerencia as portas baseando-se no `EXPOSE` do seu Dockerfile (geralmente a API na 8000 e o Streamlit na 8501, mas o Render costuma mapear a porta principal para o tráfego HTTP).
+
+> [!TIP]
+> **Resiliência do Modelo:** A aplicação está configurada para buscar o melhor modelo automaticamente no **MLflow Model Registry** do DagsHub usando o alias `@production`. Isso garante que, mesmo que o arquivo local `.pkl` não seja enviado para o repositório, a API conseguirá baixar a versão oficial de produção em tempo de execução.
+
 ## Métricas oficiais
 - Treino/validação: `reports/training_report.json`
   - Principal: `val_binary_f1_weighted_tuned`
