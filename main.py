@@ -13,15 +13,14 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-import joblib
-import mlflow
-import mlflow.sklearn
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+
+import model_loader
 
 try:
     import wine_project.database as database
@@ -60,64 +59,6 @@ CLASS_LABELS = {0: "Not Good", 1: "Good"}
 DEFAULT_BINARY_THRESHOLD = 6.5
 
 # ---------------------------------------------------------------------------
-# Model loading
-# ---------------------------------------------------------------------------
-
-
-def _load_model():
-    """Carrega o modelo via MLflow Registry ou fallback local (joblib).
-
-    Preferência:
-    1. MLflow Registry remoto: tenta alias @champion, depois stage Production.
-    2. Arquivo local `best_model.pkl` (bundle com pipeline + threshold).
-    3. Qualquer arquivo .pkl encontrado nos caminhos candidatos.
-
-    Sempre retorna um dict com chaves 'pipeline' e 'binary_threshold'.
-    """
-    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "")
-    username = os.getenv("DAGSHUB_USERNAME", "")
-    token = os.getenv("DAGSHUB_TOKEN", "")
-    model_name = os.getenv("MLFLOW_MODEL_NAME", "wine-quality-binary")
-
-    if tracking_uri and username and token:
-        try:
-            os.environ["MLFLOW_TRACKING_USERNAME"] = username
-            os.environ["MLFLOW_TRACKING_PASSWORD"] = token
-            mlflow.set_tracking_uri(tracking_uri)
-            # Try alias @champion first (MLflow >=2.9), fallback to stage Production
-            for ref in [
-                f"models:/{model_name}@production",
-                f"models:/{model_name}/Production",
-            ]:
-                try:
-                    loaded = mlflow.sklearn.load_model(ref)
-                    return {"pipeline": loaded, "binary_threshold": DEFAULT_BINARY_THRESHOLD}
-                except Exception:
-                    continue
-        except Exception as exc:
-            print(f"[main] MLflow falhou ({exc}), usando fallback local.")
-
-    # Caminhos candidatos para o bundle local (container e desenvolvimento local)
-    candidate_paths = [
-        Path(MODEL_PATH),
-        Path(__file__).resolve().parent / "models" / "best_model.pkl",
-        Path(__file__).resolve().parent / "best_model.pkl",
-    ]
-
-    for model_path in candidate_paths:
-        if model_path.exists():
-            loaded = joblib.load(model_path)
-            if isinstance(loaded, dict) and "pipeline" in loaded:
-                return loaded
-            return {"pipeline": loaded, "binary_threshold": DEFAULT_BINARY_THRESHOLD}
-
-    searched = ", ".join(str(p) for p in candidate_paths)
-    raise RuntimeError(
-        f"Modelo não encontrado ({searched}) nem no MLflow Registry."
-    )
-
-
-# ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
 
@@ -142,7 +83,9 @@ async def lifespan(app: FastAPI):
     # requests quando estiver 100 % pronta)
     database.wait_for_db()
     Base.metadata.create_all(bind=database.engine)
-    app.state.model = _load_model()
+    app.state.model = model_loader.require_model_bundle_for_api(
+        Path(__file__).resolve().parent
+    )
     print("[main] ✅ Banco e Modelo carregados com sucesso!")
 
     # Streamlit como subprocesso — somente em desenvolvimento local.

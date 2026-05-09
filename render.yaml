@@ -20,6 +20,8 @@ services:
         sync: false
       - key: ENVIRONMENT
         value: production
+      - key: MODEL_PREFER_REGISTRY
+        value: "true"
 
     # Health check (Streamlit na porta pública; FastAPI só em 127.0.0.1:8001)
     healthCheckPath: /_stcore/health

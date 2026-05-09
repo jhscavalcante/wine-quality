@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import joblib
 import json
 import numpy as np
 import pandas as pd
@@ -13,8 +12,8 @@ import requests
 import streamlit as st
 from dotenv import load_dotenv
 import mlflow
-import mlflow.sklearn
 
+import model_loader
 import supabase_logger
 
 ROOT = Path(__file__).resolve().parent
@@ -44,37 +43,8 @@ st.set_page_config(page_title="Wine Quality Classifier", page_icon="🍷", layou
 # ── Model loader ────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner="Carregando modelo…")
 def load_model():
-    """Carrega o modelo, tentando MLflow Registry primeiro, depois fallback local."""
-    
-    # 1. Tentar MLflow Registry (Mesma lógica da API)
-    username = os.getenv("DAGSHUB_USERNAME", "")
-    token = os.getenv("DAGSHUB_TOKEN", "")
-    model_name = os.getenv("MLFLOW_MODEL_NAME", "wine-quality-binary")
-
-    if MLFLOW_TRACKING_URI and username and token:
-        try:
-            os.environ["MLFLOW_TRACKING_USERNAME"] = username
-            os.environ["MLFLOW_TRACKING_PASSWORD"] = token
-            mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-            
-            for ref in [f"models:/{model_name}@production", f"models:/{model_name}/Production"]:
-                try:
-                    loaded = mlflow.sklearn.load_model(ref)
-                    return {"pipeline": loaded}, f"🌐 MLflow Registry (@production)"
-                except Exception:
-                    continue
-        except Exception as e:
-            print(f"[UI] Erro ao acessar MLflow: {e}")
-
-    # 2. Fallback para arquivo local
-    if MODEL_FALLBACK.exists():
-        try:
-            model = joblib.load(MODEL_FALLBACK)
-            return model, f"📁 Arquivo Local: {MODEL_FALLBACK.name}"
-        except Exception as e:
-            return None, f"❌ Erro no fallback: {e}"
-
-    return None, "❌ Modelo não encontrado no MLflow nem localmente"
+    """Carrega o modelo: ver `model_loader` (local primeiro, MLflow com timeout)."""
+    return model_loader.load_model_bundle(ROOT)
 
 
 @st.cache_data(show_spinner="Carregando relatório de avaliação…")
