@@ -21,8 +21,8 @@ services:
       - key: ENVIRONMENT
         value: production
 
-    # Health check
-    healthCheckPath: /health
+    # Health check (Streamlit na porta pública; FastAPI só em 127.0.0.1:8001)
+    healthCheckPath: /_stcore/health
     healthCheckInterval: 30
 
     # Auto-deploy from GitHub

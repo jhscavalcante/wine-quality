@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Garantir que o script de inicialização é executável
 RUN chmod +x start.sh
 
-# Porta pública (Streamlit)
+# Streamlit escuta em $PORT no Render (via start.sh); localmente costuma ser 8000 (docker run -p 8000:8000 -e PORT=8000)
 EXPOSE 8000
 
 # Inicia Streamlit (foreground) + FastAPI (background)
