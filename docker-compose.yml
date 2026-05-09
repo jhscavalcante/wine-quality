@@ -1,0 +1,11 @@
+# Uma porta no host para UI + /docs via nginx dentro do container.
+# `environment.PORT` sobrepõe qualquer PORT legado em .env (ex.: antigo valor de Streamlit).
+services:
+  wine-quality:
+    build: .
+    ports:
+      - "80:8080"
+    env_file:
+      - .env
+    environment:
+      PORT: "8080"

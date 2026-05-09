@@ -149,17 +149,42 @@ Ver histórico de predições registradas:
 curl http://localhost:8000/simulations
 ```
 
-### 6) Subir via Docker (opcional)
+### 6) Subir via Docker (uma URL, `/docs`, sem porta no browser)
+
+O container usa **nginx** na frente: tudo chega pela mesma porta. Dentro do container, FastAPI fica em `127.0.0.1:8001` e Streamlit em `127.0.0.1:8501` (não exponha esses IPs no seu PC — acesse sempre via nginx).
 
 **Pré-requisitos:**
-1. Certifique-se de que o Docker Desktop (ou daemon do Docker) esteja em execução.
-2. Pare a execução local (Passo 5) pressionando `Ctrl + C` no terminal antes de rodar o Docker para evitar conflito nas portas 8000 e 8501.
+1. Docker em execução.
+2. Pare o passo 5 (`Ctrl + C`) para não ocupar as portas 8000 / 8501.
+3. Arquivo `.env` (a partir de `.env.example`). **Não defina `PORT=8501` no `.env` para Docker** (valor antigo de Streamlit em dev que quebra o gateway).
+4. Recomendado: `models/best_model.pkl` após `dvc repro`. Sem ele, a inicialização depende mais do MLflow (veja logs do container).
 
-Para rodar tudo em container (Streamlit na 8000, API na 8001):
+**Opção recomendada — Compose (host porta 80 = URL sem dois-pontos):**
+```bash
+docker compose up --build
+```
+Abra **`http://localhost`** (UI Streamlit) e **`http://localhost/docs`** (Swagger).  
+Se a porta **80** do host estiver ocupada, altere em [`docker-compose.yml`](docker-compose.yml) a linha `ports` para `"8080:8080"` e acesse `http://localhost:8080`.
+
+**Opção manual — `docker run`:**
 ```bash
 docker build -t wine-quality .
-docker run -p 8000:8000 -p 8001:8001 --env-file .env wine-quality
+docker run --rm -p 80:8080 --env-file .env wine-quality
 ```
+- O **nginx** escuta **8080** dentro do container (padrão quando `PORT` não vem definida). O mapeamento `-p 80:8080` faz o navegador usar `http://localhost` (porta 80 por padrão em HTTP).
+
+**Por que não aparece `:8080` no endereço?**  
+`http://localhost` usa a porta **80** por padrão. Nós mapeamos a porta **80 do host** para a **8080 do container**.
+
+**Testar API no host** (com o mapeamento `80:8080`):
+```bash
+curl http://localhost/health
+curl http://localhost/simulations
+```
+
+**Render / variável `PORT`:** o PaaS injeta `PORT` dinâmico; o [`start.sh`](start.sh) faz o nginx escutar esse valor — sem conflito com o padrão 8080 local.
+
+**Download do modelo no MLflow:** roda **no servidor** (Python); a aba *Network* do navegador não mostra esse tráfego. Veja os logs com `docker logs` ou o terminal do `compose`.
 
 ### 7) Publicar no GitHub
 Crie um novo repositório no GitHub com o nome `wine-quality` e execute os comandos abaixo no terminal da raiz do projeto:
@@ -205,10 +230,11 @@ Siga os passos abaixo para hospedar sua aplicação (API + UI) no Render usando 
    - Clique em **Create Web Service** ou **Deploy Web Service**.
 7. **Verificação:**
    - O Render iniciará o build da imagem Docker. Quando o status mudar para **Live**, sua aplicação estará pública.
-   - A interface do **Streamlit** estará disponível na porta principal (8000) e a **API** na porta 8001. O Render mapeia automaticamente a porta do Streamlit para a URL pública.
+   - **Uma porta pública:** o Render define `PORT`; o **nginx** no container escuta esse valor e encaminha `/` para Streamlit e `/docs`, `/predict`, etc. para FastAPI (`127.0.0.1:8001`).
+   - Health check do Blueprint [`render.yaml`](render.yaml): `/_stcore/health` (Streamlit via nginx). Se configurar manualmente no painel, use o mesmo caminho.
 
 > [!TIP]
-> **Resiliência do Modelo:** A aplicação está configurada para buscar o melhor modelo automaticamente no **MLflow Model Registry** do DagsHub usando o alias `@production`. Isso garante que, mesmo que o arquivo local `.pkl` não seja enviado para o repositório, a API conseguirá baixar a versão oficial de produção em tempo de execução.
+> **Modelo:** Com `MODEL_PREFER_REGISTRY=true`, o runtime tenta primeiro o **MLflow Registry** (`@production`). Para cold start mais rápido, inclua `models/best_model.pkl` na imagem e considere `MODEL_PREFER_REGISTRY=false` ou garanta rede/credenciais estáveis. Validar com Docker local (passo 6) antes do deploy reduz surpresas.
 
 ## Métricas oficiais
 - Treino/validação: `reports/training_report.json`
@@ -251,6 +277,13 @@ Resposta (resumo):
 - `quality_label`: `Not Good` ou `Good`
 - `predicted_score`: nota contínua prevista
 - `probabilities`: distribuição binária aproximada
+
+### Simulações
+```bash
+GET /simulations
+```
+
+Com Docker (gateway na porta 80 do host): `curl http://localhost/simulations`
 
 ## Notebooks
 - `notebooks/wine_quality.ipynb`: execução e documentação do fluxo oficial
