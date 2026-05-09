@@ -11,12 +11,14 @@ RUN apt-get update \
 COPY . .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Configuração do Nginx
+# Configuração do Nginx (proxy reverso na porta 8000)
 COPY nginx.conf /etc/nginx/sites-available/default
 
-# Expor API (8000) e Streamlit (8501)
-EXPOSE 8000
-EXPOSE 8501
+# Garantir que o script de inicialização é executável
+RUN chmod +x start.sh
 
-# Inicia a aplicação via FastAPI (que por sua vez inicia o Streamlit)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Porta pública (Nginx)
+EXPOSE 8000
+
+# Inicia Nginx + Uvicorn via script
+CMD ["./start.sh"]
