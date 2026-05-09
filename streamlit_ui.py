@@ -13,7 +13,6 @@ import streamlit as st
 from dotenv import load_dotenv
 import mlflow
 
-import model_loader
 import supabase_logger
 
 ROOT = Path(__file__).resolve().parent
@@ -38,13 +37,6 @@ CLASS_LABELS = {0: "🔴 Not Good", 1: "🟢 Good"}
 WINE_TYPES = {"🍷 Tinto": "red", "🥂 Branco": "white"}
 
 st.set_page_config(page_title="Wine Quality Classifier", page_icon="🍷", layout="wide")
-
-
-# ── Model loader ────────────────────────────────────────────────────────────
-@st.cache_resource(show_spinner="Carregando modelo…")
-def load_model():
-    """Carrega o modelo: ver `model_loader` (local primeiro, MLflow com timeout)."""
-    return model_loader.load_model_bundle(ROOT)
 
 
 @st.cache_data(show_spinner="Carregando relatório de avaliação…")
@@ -185,20 +177,6 @@ def _score_to_class(score: float, thresholds: dict) -> int:
     return 1 if float(score) >= t else 0
 
 
-def _predict_local(payload: dict) -> tuple[int, list[float], list[int], float]:
-    model, source = load_model()
-    if model is None:
-        raise RuntimeError(f"Modelo não disponível: {source}")
-    pipeline = model["pipeline"] if isinstance(model, dict) and "pipeline" in model else model
-    thresholds = {"binary_threshold": model.get("binary_threshold", 6.5)} if isinstance(model, dict) else {"binary_threshold": 6.5}
-    features = _prepare_features(payload, model)
-    predicted_score = float(pipeline.predict(features)[0])
-    quality = _score_to_class(predicted_score, thresholds)
-    proba = _score_to_probabilities(predicted_score)
-    classes = [0, 1]
-    return quality, proba, classes, predicted_score
-
-
 RAW_FEATURES = [
     "fixed_acidity",
     "volatile_acidity",
@@ -244,11 +222,7 @@ st.title("🍷 Wine Quality Classifier")
 wine_type_label = st.radio("Tipo de vinho", list(WINE_TYPES.keys()), horizontal=True)
 wine_type = WINE_TYPES[wine_type_label]
 
-try:
-    _, source = load_model()
-    st.sidebar.success(f"✅ Modelo: {source}")
-except Exception as e:
-    st.sidebar.error(f"Modelo não disponível: {e}")
+st.sidebar.info("🔌 Predição via API (modelo carregado no backend)")
 
 # ── Sidebar com informações ────────────────────────────────────────────────
 with st.sidebar:

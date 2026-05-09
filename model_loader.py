@@ -1,8 +1,7 @@
 """
-Carrega o bundle do modelo (pickle local ou MLflow Registry) com timeout no MLflow.
+Carrega o modelo exclusivamente do MLflow Registry (DagsHub).
 
-MODEL_PREFER_REGISTRY=true tenta o Registry antes do pickle (alinhado a promoções
-@production no Render). Padrão false: pickle local primeiro. Timeout: MLFLOW_MODEL_LOAD_TIMEOUT_SEC.
+Não há fallback local para pickle.
 """
 
 from __future__ import annotations
@@ -12,68 +11,25 @@ import os
 from functools import partial
 from pathlib import Path
 
-import joblib
 import mlflow
 import mlflow.sklearn
 
 DEFAULT_BINARY_THRESHOLD = 6.5
 
 
-def prefer_registry_first() -> bool:
-    """Se True, tenta MLflow @production antes do pickle (alinhado a promoções no Registry)."""
-    v = (os.getenv("MODEL_PREFER_REGISTRY", "") or "").strip().lower()
-    return v in ("1", "true", "yes", "on")
-
-
 def mlflow_load_timeout_sec() -> float:
     return float(os.getenv("MLFLOW_MODEL_LOAD_TIMEOUT_SEC", "120"))
 
 
-def _candidate_local_paths(root: Path, model_path_override: str | None) -> list[Path]:
-    base = model_path_override or os.getenv(
-        "MODEL_PATH", str(root / "models" / "best_model.pkl")
-    )
-    paths = [
-        Path(base),
-        root / "models" / "best_model.pkl",
-        root / "best_model.pkl",
-    ]
-    seen: set[str] = set()
-    out: list[Path] = []
-    for p in paths:
-        key = str(p.resolve())
-        if key not in seen:
-            seen.add(key)
-            out.append(p)
-    return out
-
-
-def _normalize_bundle(loaded: object) -> dict:
-    if isinstance(loaded, dict) and "pipeline" in loaded:
-        out = dict(loaded)
-        out.setdefault("binary_threshold", DEFAULT_BINARY_THRESHOLD)
-        return out
-    return {"pipeline": loaded, "binary_threshold": DEFAULT_BINARY_THRESHOLD}
-
-
-def _load_local_bundle(paths: list[Path]) -> dict | None:
-    for model_path in paths:
-        if not model_path.exists():
-            continue
-        try:
-            loaded = joblib.load(model_path)
-            return _normalize_bundle(loaded)
-        except Exception:
-            continue
-    return None
-
-
-def _sklearn_load_from_registry(model_name: str, timeout_sec: float) -> object | None:
+def _sklearn_load_from_registry(model_name: str, timeout_sec: float) -> tuple[object | None, str | None]:
     tracking_uri = (os.getenv("MLFLOW_TRACKING_URI") or "").strip()
     username = (os.getenv("DAGSHUB_USERNAME") or "").strip()
     token = (os.getenv("DAGSHUB_TOKEN") or "").strip()
     if not (tracking_uri and username and token):
-        return None
+        return None, (
+            "Credenciais/URI ausentes. Defina MLFLOW_TRACKING_URI, "
+            "DAGSHUB_USERNAME e DAGSHUB_TOKEN."
+        )
 
     os.environ["MLFLOW_TRACKING_USERNAME"] = username
     os.environ["MLFLOW_TRACKING_PASSWORD"] = token
@@ -89,7 +45,8 @@ def _sklearn_load_from_registry(model_name: str, timeout_sec: float) -> object |
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(partial(mlflow.sklearn.load_model, ref))
-                return future.result(timeout=timeout_sec)
+                loaded = future.result(timeout=timeout_sec)
+                return loaded, None
         except concurrent.futures.TimeoutError:
             last_err = TimeoutError(
                 f"MLflow excedeu {timeout_sec}s ao carregar {ref}"
@@ -101,7 +58,8 @@ def _sklearn_load_from_registry(model_name: str, timeout_sec: float) -> object |
 
     if last_err:
         print(f"[model_loader] MLflow Registry indisponível: {last_err}")
-    return None
+        return None, str(last_err)
+    return None, "Modelo não encontrado no Registry."
 
 
 def load_model_bundle(
@@ -111,55 +69,24 @@ def load_model_bundle(
 ) -> tuple[dict | None, str]:
     """Retorna (bundle ou None, mensagem de origem / erro).
 
-    Ordem controlada por MODEL_PREFER_REGISTRY:
-    - false (padrão): arquivo local → MLflow → local de novo.
-    - true: MLflow → arquivo local (fallback se Registry/credenciais falharem).
+    Política estrita: somente MLflow Registry (@production).
+    Sem fallback local para pickle.
     """
-    root = root or Path(__file__).resolve().parent
-    paths = _candidate_local_paths(root, model_path_override)
+    _ = root or Path(__file__).resolve().parent
+    _ = model_path_override
     timeout_sec = mlflow_load_timeout_sec()
     model_name = os.getenv("MLFLOW_MODEL_NAME", "wine-quality-binary")
 
-    if prefer_registry_first():
-        ml_pipeline = _sklearn_load_from_registry(model_name, timeout_sec)
-        if ml_pipeline is not None:
-            return {
-                "pipeline": ml_pipeline,
-                "binary_threshold": DEFAULT_BINARY_THRESHOLD,
-            }, "🌐 MLflow Registry (@production)"
-
-        local = _load_local_bundle(paths)
-        if local is not None:
-            used = next(p for p in paths if p.exists())
-            return local, f"📁 Arquivo local (fallback): {used.name}"
-
-        searched = ", ".join(str(p) for p in paths)
-        return None, (
-            f"❌ MLflow Registry indisponível e sem modelo local ({searched}). "
-            f"Timeout {timeout_sec:g}s por tentativa ou credenciais/URI."
-        )
-
-    local = _load_local_bundle(paths)
-    if local is not None:
-        used = next(p for p in paths if p.exists())
-        return local, f"📁 Arquivo local: {used.name}"
-
-    ml_pipeline = _sklearn_load_from_registry(model_name, timeout_sec)
+    ml_pipeline, registry_err = _sklearn_load_from_registry(model_name, timeout_sec)
     if ml_pipeline is not None:
         return {
             "pipeline": ml_pipeline,
             "binary_threshold": DEFAULT_BINARY_THRESHOLD,
         }, "🌐 MLflow Registry (@production)"
-
-    local2 = _load_local_bundle(paths)
-    if local2 is not None:
-        used = next(p for p in paths if p.exists())
-        return local2, f"📁 Arquivo local: {used.name}"
-
-    searched = ", ".join(str(p) for p in paths)
     return None, (
-        f"❌ Modelo não encontrado ({searched}) "
-        f"nem no MLflow Registry (timeout {timeout_sec:g}s ou credenciais/URI)."
+        f"❌ Não foi possível carregar modelo do MLflow Registry (@production). "
+        f"Detalhe: {registry_err or 'erro desconhecido'}. "
+        f"Timeout configurado: {timeout_sec:g}s."
     )
 
 

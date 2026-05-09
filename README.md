@@ -157,7 +157,7 @@ O container usa **nginx** na frente: tudo chega pela mesma porta. Dentro do cont
 1. Docker em execução.
 2. Pare o passo 5 (`Ctrl + C`) para não ocupar as portas 8000 / 8501.
 3. Arquivo `.env` (a partir de `.env.example`). **Não defina `PORT=8501` no `.env` para Docker** (valor antigo de Streamlit em dev que quebra o gateway).
-4. Recomendado: `models/best_model.pkl` após `dvc repro`. Sem ele, a inicialização depende mais do MLflow (veja logs do container).
+4. Produção usa modelo do MLflow Registry (DagsHub) sem fallback local. Garanta credenciais/URI corretas no `.env` e no Render.
 
 **Opção recomendada — Compose (host porta 80 = URL sem dois-pontos):**
 ```bash
@@ -185,6 +185,8 @@ curl http://localhost/simulations
 **Render / variável `PORT`:** o PaaS injeta `PORT` dinâmico; o [`start.sh`](start.sh) faz o nginx escutar esse valor — sem conflito com o padrão 8080 local.
 
 **Download do modelo no MLflow:** roda **no servidor** (Python); a aba *Network* do navegador não mostra esse tráfego. Veja os logs com `docker logs` ou o terminal do `compose`.
+
+**UI API-only:** o Streamlit não carrega modelo local/Registry; toda inferência passa pela API.
 
 ### 7) Publicar no GitHub
 Crie um novo repositório no GitHub com o nome `wine-quality` e execute os comandos abaixo no terminal da raiz do projeto:
@@ -234,7 +236,7 @@ Siga os passos abaixo para hospedar sua aplicação (API + UI) no Render usando 
    - Health check do Blueprint [`render.yaml`](render.yaml): `/_stcore/health` (Streamlit via nginx). Se configurar manualmente no painel, use o mesmo caminho.
 
 > [!TIP]
-> **Modelo:** Com `MODEL_PREFER_REGISTRY=true`, o runtime tenta primeiro o **MLflow Registry** (`@production`). Para cold start mais rápido, inclua `models/best_model.pkl` na imagem e considere `MODEL_PREFER_REGISTRY=false` ou garanta rede/credenciais estáveis. Validar com Docker local (passo 6) antes do deploy reduz surpresas.
+> **Modelo (política atual):** O runtime carrega modelo somente do **MLflow Registry** (`@production`) e falha explicitamente se o Registry/credenciais não estiverem disponíveis (sem fallback para arquivo local).
 
 ## Métricas oficiais
 - Treino/validação: `reports/training_report.json`
